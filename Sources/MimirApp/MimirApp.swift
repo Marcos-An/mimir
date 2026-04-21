@@ -164,7 +164,7 @@ struct SettingsOverlay: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Ajustes")
+                Text("Settings")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.bottom, 8)
@@ -190,7 +190,7 @@ struct SettingsOverlay: View {
                             .foregroundStyle(MimirTheme.secondaryInk)
                     }
                     Spacer()
-                    Button("Restaurar padrões") {
+                    Button("Restore defaults") {
                         store.reset()
                     }
                     .buttonStyle(SecondaryCapsuleButtonStyle())
@@ -237,16 +237,16 @@ struct SettingsOverlay: View {
     }
 
     var generalSection: some View {
-        SettingsSectionCard(title: "Geral", description: "") {
+        SettingsSectionCard(title: "General", description: "") {
             VStack(alignment: .leading, spacing: 18) {
-                KeyBindingRecorderRow(title: "Atalho de transcrição", binding: $store.settings.activationTrigger)
+                KeyBindingRecorderRow(title: "Transcription shortcut", binding: $store.settings.activationTrigger)
 
-                KeyBindingRecorderRow(title: "Atalho Hermes", binding: $store.settings.hermesActivationTrigger)
-                Text("Envia a transcrição para a ilha do Hermes em vez de colar no app ativo.")
+                KeyBindingRecorderRow(title: "Hermes shortcut", binding: $store.settings.hermesActivationTrigger)
+                Text("Sends the transcription to the Hermes island instead of pasting into the active app.")
                     .helperTextStyle()
 
                 MimirDropdown(
-                    title: "Modo de ativação",
+                    title: "Activation mode",
                     selection: $store.settings.activationMode,
                     options: ActivationMode.allCases.map { ($0, $0.displayName) }
                 )
@@ -254,7 +254,7 @@ struct SettingsOverlay: View {
                     .rowSubtitleStyle()
 
                 MimirDropdown(
-                    title: "Idioma preferido",
+                    title: "Preferred language",
                     selection: Binding(
                         get: { store.settings.preferredLanguage },
                         set: { store.settings.preferredLanguage = $0 }
@@ -266,10 +266,10 @@ struct SettingsOverlay: View {
     }
 
     var audioSection: some View {
-        SettingsSectionCard(title: "Áudio", description: "") {
+        SettingsSectionCard(title: "Audio", description: "") {
             VStack(alignment: .leading, spacing: 14) {
                 MicrophonePickerRow(store: store)
-                Text("Em Automático, o Mimir usa o microfone padrão do sistema.")
+                Text("On Automatic, Mimir uses the system default microphone.")
                     .helperTextStyle()
             }
         }
@@ -277,53 +277,53 @@ struct SettingsOverlay: View {
 
     var pipelineSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsSectionCard(title: "Transcrição", description: "") {
+            SettingsSectionCard(title: "Transcription", description: "") {
                 VStack(alignment: .leading, spacing: 14) {
                     MimirDropdown(
-                        title: "Provedor",
+                        title: "Provider",
                         selection: $store.settings.transcriptionProvider,
-                        options: TranscriptionProvider.allCases.map { ($0, $0.displayName + ($0.isAvailable ? "" : " (em breve)")) }
+                        options: TranscriptionProvider.allCases.map { ($0, $0.displayName + ($0.isAvailable ? "" : " (coming soon)")) }
                     )
                     MimirDropdown(
-                        title: "Estratégia",
+                        title: "Strategy",
                         selection: $store.settings.transcriptionStrategy,
                         options: TranscriptionStrategy.allCases.map { ($0, $0.displayName) }
                     )
                     MimirDropdown(
-                        title: "Modelo Whisper",
+                        title: "Whisper model",
                         selection: $store.settings.whisperKitModel,
                         options: WhisperKitModel.allCases.map { ($0, $0.displayName) }
                     )
-                    Text("Chunked responde melhor em ditado longo; batch processa o arquivo inteiro.")
+                    Text("Chunked responds better on long dictation; batch processes the whole file.")
                         .helperTextStyle()
                 }
             }
 
-            SettingsSectionCard(title: "Formatação", description: "") {
+            SettingsSectionCard(title: "Formatting", description: "") {
                 VStack(alignment: .leading, spacing: 14) {
                     MimirDropdown(
-                        title: "Pós-processamento",
+                        title: "Post-processing",
                         selection: $store.settings.postProcessingProvider,
                         options: PostProcessingProvider.allCases.map { ($0, $0.displayName) }
                     )
                     MimirDropdown(
-                        title: "Estilo",
+                        title: "Style",
                         selection: $store.settings.postProcessingStyle,
                         options: PostProcessingStyle.allCases.map { ($0, $0.displayName) }
                     )
-                    Text("Estruturado preserva idioma e conteúdo; só cria listas quando a fala soa como enumeração.")
+                    Text("Structured preserves language and content; only creates lists when the speech sounds like an enumeration.")
                         .helperTextStyle()
                 }
             }
 
-            SettingsSectionCard(title: "Inserção", description: "") {
+            SettingsSectionCard(title: "Insertion", description: "") {
                 VStack(alignment: .leading, spacing: 14) {
                     MimirDropdown(
-                        title: "Estratégia",
+                        title: "Strategy",
                         selection: $store.settings.insertionStrategy,
                         options: InsertionStrategy.allCases.map { ($0, $0.displayName) }
                     )
-                    Toggle("Colar automaticamente", isOn: $store.settings.shouldAutoPaste)
+                    Toggle("Paste automatically", isOn: $store.settings.shouldAutoPaste)
                         .font(.system(size: 14, weight: .medium))
                 }
             }
@@ -335,24 +335,24 @@ struct SettingsOverlay: View {
     }
 
     var aboutSection: some View {
-        SettingsSectionCard(title: "Sobre", description: "") {
+        SettingsSectionCard(title: "About", description: "") {
             VStack(alignment: .leading, spacing: 10) {
-                AboutRow(title: "Mimir", detail: "Ditado local, sem mandar áudio para a nuvem.")
+                AboutRow(title: "Mimir", detail: "Local dictation — nothing uploaded to the cloud.")
             }
         }
     }
 
     private var selectedTitle: String {
-        DashboardSection.settingsItems.first(where: { $0.id == selectedItemID })?.title ?? "Ajustes"
+        DashboardSection.settingsItems.first(where: { $0.id == selectedItemID })?.title ?? "Settings"
     }
 
     private var selectedSubtitle: String {
         switch selectedItemID {
-        case "audio": return "Entrada de áudio e dispositivo de captura."
-        case "pipeline": return "Transcrição, pós-processamento e inserção."
-        case "permissions": return "Permissões necessárias para o atalho global funcionar bem."
-        case "about": return "Resumo da direção visual atual."
-        default: return "Atalho, idioma e comportamento principal do app."
+        case "audio": return "Audio input and capture device."
+        case "pipeline": return "Transcription, post-processing, and insertion."
+        case "permissions": return "Permissions needed for the global shortcut to work well."
+        case "about": return "Summary of the current visual direction."
+        default: return "Shortcut, language, and the app's main behavior."
         }
     }
 }
@@ -485,13 +485,13 @@ private struct PermissionsSettingsCard: View {
     @State private var feedback: String?
 
     var body: some View {
-        SettingsSectionCard(title: "Permissões", description: "Solicite ou revise as permissões que o MIMIR usa para captar e inserir texto.") {
+        SettingsSectionCard(title: "Permissions", description: "Request or review the permissions MIMIR uses to capture and insert text.") {
             VStack(alignment: .leading, spacing: 14) {
-                InteractivePermissionRow(title: "Microfone", description: "Necessário para gravar áudio.", state: snapshot.microphone, buttonTitle: "Solicitar") {
+                InteractivePermissionRow(title: "Microphone", description: "Required to record audio.", state: snapshot.microphone, buttonTitle: "Request") {
                     Task {
                         do {
                             try await PermissionCoordinator.ensureMicrophoneAccess()
-                            feedback = "Permissão de microfone atualizada."
+                            feedback = "Microphone permission updated."
                         } catch {
                             feedback = error.localizedDescription
                         }
@@ -499,11 +499,11 @@ private struct PermissionsSettingsCard: View {
                     }
                 }
 
-                InteractivePermissionRow(title: "Reconhecimento de fala", description: "Necessário para usar Apple Speech on-device.", state: snapshot.speech, buttonTitle: "Solicitar") {
+                InteractivePermissionRow(title: "Speech recognition", description: "Required to use Apple Speech on-device.", state: snapshot.speech, buttonTitle: "Request") {
                     Task {
                         do {
                             try await PermissionCoordinator.ensureSpeechAccess()
-                            feedback = "Permissão de fala atualizada."
+                            feedback = "Speech permission updated."
                         } catch {
                             feedback = error.localizedDescription
                         }
@@ -511,19 +511,19 @@ private struct PermissionsSettingsCard: View {
                     }
                 }
 
-                InteractivePermissionRow(title: "Acessibilidade", description: "Necessário para colar no app em foco.", state: snapshot.accessibility, buttonTitle: "Abrir prompt") {
+                InteractivePermissionRow(title: "Accessibility", description: "Required to paste into the focused app.", state: snapshot.accessibility, buttonTitle: "Open prompt") {
                     do {
                         _ = try PermissionCoordinator.ensureAccessibilityAccess(prompt: true)
-                        feedback = "Pedido de acessibilidade enviado ao sistema."
+                        feedback = "Accessibility request sent to the system."
                     } catch {
                         feedback = error.localizedDescription
                     }
                     snapshot = PermissionSnapshot.current()
                 }
 
-                InteractivePermissionRow(title: "Input monitoring", description: "Necessário para escutar o atalho global fora do app.", state: snapshot.inputMonitoring, buttonTitle: "Solicitar") {
+                InteractivePermissionRow(title: "Input monitoring", description: "Required to listen for the global shortcut outside the app.", state: snapshot.inputMonitoring, buttonTitle: "Request") {
                     let granted = PermissionCoordinator.ensureInputMonitoring()
-                    feedback = granted ? "Input monitoring liberado." : "O macOS ainda não liberou input monitoring."
+                    feedback = granted ? "Input monitoring granted." : "macOS hasn't granted input monitoring yet."
                     snapshot = PermissionSnapshot.current()
                 }
 
@@ -612,7 +612,7 @@ private struct KeyBindingRecorderRow: View {
                         Text(recorderSubtitle(binding: binding))
                             .rowSubtitleStyle()
                     } else {
-                        Text("Pressione a nova combinação…")
+                        Text("Press the new combination…")
                             .rowSubtitleStyle()
                     }
                 }
@@ -648,7 +648,7 @@ private struct KeyBindingRecorderRow: View {
         let mods = captured.modifiers
         let count = popCount(mods)
         if captured.keyCode == 0 && count >= 3 {
-            return "Parece que sua tecla está remapeada (Karabiner/Hyper). O Mimir só recebe os modificadores — não vê qual tecla física foi apertada. Salvar funciona normalmente, ou escolha outra tecla."
+            return "Looks like your key is remapped (Karabiner/Hyper). Mimir only receives the modifiers — it can't see which physical key was pressed. Saving still works, or pick another key."
         }
         return nil
     }
@@ -679,7 +679,7 @@ private struct KeyBindingRecorderRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Clique para gravar um novo atalho")
+        .help("Click to record a new shortcut")
     }
 
     private var recordingArea: some View {
@@ -690,7 +690,7 @@ private struct KeyBindingRecorderRow: View {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(MimirTheme.accentPurple)
-                    Text("Solte as teclas primeiro…")
+                    Text("Release the keys first…")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(MimirTheme.ink.opacity(0.75))
                         .fixedSize()
@@ -703,7 +703,7 @@ private struct KeyBindingRecorderRow: View {
                         .scaleEffect(pulse ? 1.35 : 0.85)
                         .opacity(pulse ? 0.55 : 1)
                         .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: pulse)
-                    Text("Pressione o atalho…")
+                    Text("Press the shortcut…")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(MimirTheme.ink.opacity(0.75))
                         .fixedSize()
@@ -734,7 +734,7 @@ private struct KeyBindingRecorderRow: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
-                .help("Salvar atalho")
+                .help("Save shortcut")
             }
 
             Button { stopRecording() } label: {
@@ -745,7 +745,7 @@ private struct KeyBindingRecorderRow: View {
                     .background(Circle().fill(MimirTheme.softFill))
             }
             .buttonStyle(.plain)
-            .help("Cancelar")
+            .help("Cancel")
         }
         .onAppear { pulse = true }
     }
@@ -1010,7 +1010,7 @@ private struct MicrophonePickerRow: View {
     var body: some View {
         HStack(spacing: 14) {
             MimirDropdown(
-                title: "Microfone",
+                title: "Microphone",
                 selection: Binding(
                     get: { store.settings.inputDeviceUID },
                     set: { store.settings.inputDeviceUID = $0 }
@@ -1032,14 +1032,14 @@ private struct MicrophonePickerRow: View {
 
     private var microphoneOptions: [(String?, String)] {
         let systemDefault = AudioInputDevice.systemDefaultInput()
-        let autoLabel = systemDefault.map { "Automático (sistema) — \($0.name)" } ?? "Automático (sistema)"
+        let autoLabel = systemDefault.map { "Automatic (system) — \($0.name)" } ?? "Automatic (system)"
         var items: [(String?, String)] = [(nil, autoLabel)]
         for device in devices {
             items.append((device.uid, device.name))
         }
         if let uid = store.settings.inputDeviceUID,
            !devices.contains(where: { $0.uid == uid }) {
-            items.append((uid, "Dispositivo indisponível (\(uid))"))
+            items.append((uid, "Unavailable device (\(uid))"))
         }
         return items
     }
@@ -1100,8 +1100,8 @@ private enum PermissionState {
     var label: String {
         switch self {
         case .granted: return "OK"
-        case .missing: return "Falta"
-        case .pending: return "Pendente"
+        case .missing: return "Missing"
+        case .pending: return "Pending"
         }
     }
 

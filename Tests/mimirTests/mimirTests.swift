@@ -32,15 +32,15 @@ func displayTitleReflectsCurrentState() {
 
 @Test("Dashboard shell exposes MIMIR navigation and feature-focused copy")
 func dashboardShellExposesMimirNavigationAndCopy() {
-    #expect(DashboardSection.primaryItems.map(\.title) == ["Painel", "Sessão", "Histórico"])
-    #expect(DashboardSection.utilityItems.map(\.title) == ["Permissões", "Configurações"])
-    #expect(DashboardSection.settingsItems.map(\.title) == ["Geral", "Áudio", "Pipeline", "Permissões", "Sobre"])
-    #expect(DashboardMetric.defaultMetrics.map(\.title) == ["Atalho ativo", "Transcrição", "Inserção", "Idioma"])
+    #expect(DashboardSection.primaryItems.map(\.title) == ["Overview", "Session", "History"])
+    #expect(DashboardSection.utilityItems.map(\.title) == ["Permissions", "Settings"])
+    #expect(DashboardSection.settingsItems.map(\.title) == ["General", "Audio", "Pipeline", "Permissions", "About"])
+    #expect(DashboardMetric.defaultMetrics.map(\.title) == ["Active shortcut", "Transcription", "Insertion", "Language"])
     #expect(DashboardChrome.appName == "MIMIR")
-    #expect(DashboardChrome.sidebarCardTitle == "Tema próprio, fluxo local")
-    #expect(DashboardChrome.sidebarCardBody == "Transcrição nativa para macOS com visual expressivo, foco em velocidade e privacidade no dispositivo.")
-    #expect(DashboardChrome.primaryActionTitle == "Começar a transcrever")
-    #expect(DashboardPromo.defaultCards.map(\.action) == ["Abrir atalhos", "Revisar permissões"])
+    #expect(DashboardChrome.sidebarCardTitle == "Own theme, local flow")
+    #expect(DashboardChrome.sidebarCardBody == "Native macOS transcription with an expressive look, built for speed and on-device privacy.")
+    #expect(DashboardChrome.primaryActionTitle == "Start transcribing")
+    #expect(DashboardPromo.defaultCards.map(\.action) == ["Open shortcuts", "Review permissions"])
 }
 
 @Test("Press and release runs a full hold-to-talk dictation cycle")
@@ -213,21 +213,21 @@ func whisperKitProviderConfigurationFollowsSettings() {
 func structuredMLXPromptPreservesLanguageAndFormattingRules() {
     let prompt = MLXPostProcessor.systemPrompt(for: .structured)
 
-    #expect(prompt.localizedCaseInsensitiveContains("idioma"))
-    #expect(prompt.localizedCaseInsensitiveContains("não traduza"))
+    #expect(prompt.localizedCaseInsensitiveContains("language"))
+    #expect(prompt.localizedCaseInsensitiveContains("do not translate"))
     #expect(prompt.localizedCaseInsensitiveContains("preserve"))
-    #expect(prompt.localizedCaseInsensitiveContains("pontuação"))
-    #expect(prompt.localizedCaseInsensitiveContains("parágrafo"))
-    #expect(prompt.localizedCaseInsensitiveContains("listas"))
+    #expect(prompt.localizedCaseInsensitiveContains("punctuation"))
+    #expect(prompt.localizedCaseInsensitiveContains("paragraph"))
+    #expect(prompt.localizedCaseInsensitiveContains("lists"))
 }
 
 @Test("Cleanup MLX prompt stays conservative and avoids structural rewrites")
 func cleanupMLXPromptStaysConservative() {
     let prompt = MLXPostProcessor.systemPrompt(for: .cleanup)
 
-    #expect(prompt.localizedCaseInsensitiveContains("ortografia"))
-    #expect(prompt.localizedCaseInsensitiveContains("não invente"))
-    #expect(prompt.localizedCaseInsensitiveContains("não reorganize") || prompt.localizedCaseInsensitiveContains("mínima intervenção") || prompt.localizedCaseInsensitiveContains("Corrija apenas"))
+    #expect(prompt.localizedCaseInsensitiveContains("spelling"))
+    #expect(prompt.localizedCaseInsensitiveContains("do not invent"))
+    #expect(prompt.localizedCaseInsensitiveContains("do not reorganize") || prompt.localizedCaseInsensitiveContains("minimum intervention") || prompt.localizedCaseInsensitiveContains("fix only"))
 }
 
 @Test("Local pipeline preserves structured transcription metrics through insertion")

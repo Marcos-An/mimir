@@ -1,85 +1,88 @@
 # Mimir
 
-Ditado 100% local para macOS. Grava sua voz, transcreve on-device (WhisperKit),
-aplica uma limpeza opcional por um LLM local (MLX) e cola o texto no app em
-foco. Nada sai da sua máquina.
+100% local dictation for macOS. Records your voice, transcribes it on-device
+(WhisperKit), runs an optional cleanup pass through a local LLM (MLX), and
+pastes the text into whatever app is in front. Nothing ever leaves your
+machine.
 
-> ⚠️ **Projeto em estágio inicial.** Uso pessoal estável, mas espere rebaixa
-> esporádica de performance e mensagens em pt-BR no UI. PRs bem-vindas.
+> ⚠️ **Early stage.** Stable for personal use, but expect occasional
+> performance regressions. PRs welcome.
 
 ## Highlights
 
-- **Totalmente offline** — áudio e texto nunca saem do dispositivo.
-- **Trigger global** configurável (default: Right ⌥, tap para alternar).
-- **Streaming de preview** — o texto do LLM aparece token-a-token na ilha enquanto gera.
-- **Telemetria visual** — popover com veredito rápida/normal/lenta, barra
-  proporcional de onde o tempo foi, comparação com a mediana das últimas ditadas.
-- **Histórico local** em `UserDefaults` (últimos 200 ditados com métricas).
+- **Fully offline** — audio and text never leave the device.
+- **Configurable global trigger** (default: Right ⌘, tap-to-toggle).
+- **Streaming preview** — the LLM output appears token-by-token on the island while it generates.
+- **Visual telemetry** — popover with fast/normal/slow verdict, proportional
+  bar showing where the time went, comparison against the median of recent sessions.
+- **Local history** in `UserDefaults` (last 200 dictations with metrics).
+- **Automatic language detection** — works with Portuguese, English, Spanish,
+  French, German, Italian, Japanese, and more out of the box.
 
-## Requisitos
+## Requirements
 
-- macOS 15 (Sequoia) ou mais novo
-- Apple Silicon (M1+) — o MLX e os modelos Whisper quantizados são otimizados para ANE/GPU
-- Xcode 26+ com toolchain Swift 6.3+
-- ~3 GB de disco livre para os modelos (Whisper Large V3 Turbo Quantizado + Qwen2.5-3B 4-bit)
+- macOS 15 (Sequoia) or newer
+- Apple Silicon (M1+) — MLX and the quantized Whisper models are tuned for ANE/GPU
+- Xcode 26+ with Swift 6.3+ toolchain
+- ~3 GB of free disk for the models (Whisper Large V3 Turbo Quantized + Qwen2.5-3B 4-bit)
 
-## Instalação (a partir do código)
+## Install (from source)
 
 ```bash
-git clone https://github.com/<seu-usuário>/mimir.git
+git clone https://github.com/<your-user>/mimir.git
 cd mimir
 swift build -c release
 bash scripts/build_app.sh
 open dist/Mimir.app
 ```
 
-O `build_app.sh` cria um keychain local (`mimir-codesign`) com um certificado
-auto-assinado para dar code-signing estável ao binário — necessário para o
-macOS conceder permissões (Input Monitoring, Accessibility) sem revogá-las a
-cada rebuild. Variáveis de ambiente úteis:
+`build_app.sh` creates a local keychain (`mimir-codesign`) with a self-signed
+certificate so the binary gets a stable code signature — required for macOS to
+grant permissions (Input Monitoring, Accessibility) without revoking them on
+every rebuild. Useful environment variables:
 
-- `MIMIR_BUNDLE_ID=dev.seunome.mimir` — sobrescreve o `CFBundleIdentifier`.
-- `MIMIR_OUTPUT_DIR=/caminho/customizado` — diretório de saída do `.app`.
-- `MIMIR_SKIP_CODESIGN=1` — pula assinatura (útil em CI).
+- `MIMIR_BUNDLE_ID=dev.yourname.mimir` — overrides `CFBundleIdentifier`.
+- `MIMIR_OUTPUT_DIR=/custom/path` — output directory for the `.app`.
+- `MIMIR_SKIP_CODESIGN=1` — skips signing (useful in CI).
 
-## Primeira execução
+## First run
 
-1. Abra o `Mimir.app` recém-buildado.
-2. macOS vai pedir três permissões:
-   - **Microfone** — para capturar áudio.
-   - **Monitoramento de Entrada** — para detectar o atalho global.
-   - **Acessibilidade** — para fazer o `⌘V` final no app em foco.
-3. Na primeira ditada os modelos são baixados do Hugging Face:
-   - Whisper Large V3 Turbo Quantizado (~950 MB) via WhisperKit
+1. Open the freshly built `Mimir.app`.
+2. macOS will ask for three permissions:
+   - **Microphone** — to capture audio.
+   - **Input Monitoring** — to detect the global shortcut.
+   - **Accessibility** — to send the final `⌘V` into the focused app.
+3. On the first dictation the models are downloaded from Hugging Face:
+   - Whisper Large V3 Turbo Quantized (~950 MB) via WhisperKit
    - Qwen2.5-3B Instruct 4-bit (~1.8 GB) via mlx-community
-   - Isso leva alguns minutos e só acontece uma vez por modelo.
-4. Segure o gatilho (default: **toque em Right ⌥**), fale, toque de novo, e o texto aparece.
+   - Takes a few minutes and only happens once per model.
+4. Hold the trigger (default: **tap Right ⌘**), speak, tap again, and the text shows up.
 
-## Configurações principais (UI → Ajustes)
+## Main settings (UI → Settings)
 
-| Categoria | Opções |
+| Category | Options |
 |-----------|--------|
-| Trigger | Modifier puro (Right ⌥/⌘/⇧), modifier + tecla, hold-to-talk ou tap-to-toggle |
-| Transcrição | WhisperKit (Core ML) — outros providers estão como placeholder |
-| Estratégia Whisper | Chunked (streaming + warmup) ou Batch (arquivo inteiro) |
-| Modelo Whisper | tiny / base / small / medium / large-v3 / large-v3-turbo / **large-v3-turbo quantizado (default)** |
-| Pós-processamento | MLX (Qwen2.5-3B) ou desativado |
-| Estilo de pós-processamento | Correção leve (ortografia/acentos) ou Estruturado (pontuação, parágrafos, listas quando óbvias) |
-| Inserção | Clipboard + paste sintético |
-| Idioma preferencial | Força Whisper a decodificar numa variante específica |
+| Trigger | Plain modifier (Right ⌘/⌥/⇧), modifier + key, hold-to-talk or tap-to-toggle |
+| Transcription | WhisperKit (Core ML) — other providers are placeholders |
+| Whisper strategy | Chunked (streaming + warmup) or Batch (whole file) |
+| Whisper model | tiny / base / small / medium / large-v3 / large-v3-turbo / **large-v3-turbo quantized (default)** |
+| Post-processing | MLX (Qwen2.5-3B) or disabled |
+| Post-processing style | Light cleanup (spelling/diacritics) or Structured (punctuation, paragraphs, lists when obvious) |
+| Insertion | Clipboard + synthetic paste |
+| Preferred language | Forces Whisper to decode in a specific variant; Automatic by default |
 
-## Integração Hermes (opcional)
+## Hermes integration (optional)
 
-O Mimir tem um painel embutido para uma CLI chamada **Hermes** (separada). Se
-você não usa Hermes, o painel fica inerte e mostra instruções — o resto do app
-funciona normal.
+Mimir has a built-in panel for a separate CLI called **Hermes**. If you don't
+use Hermes, the panel sits idle and shows instructions — the rest of the app
+works normally.
 
-Para ativar:
-- Instale o binário `hermes` em qualquer lugar no seu `PATH` (o Mimir procura
-  em `~/.local/bin/hermes` por default), ou
-- Defina `HERMES_PATH=/caminho/para/hermes` antes de abrir o Mimir.
+To enable:
+- Install the `hermes` binary anywhere on your `PATH` (Mimir looks in
+  `~/.local/bin/hermes` by default), or
+- Set `HERMES_PATH=/path/to/hermes` before launching Mimir.
 
-## Arquitetura resumida
+## Architecture at a glance
 
 ```
 ┌─────────────┐   audio    ┌───────────────────┐  transcript   ┌─────────────┐
@@ -90,32 +93,31 @@ Para ativar:
                                                                        ▼
                                                               ┌─────────────┐
                                                               │ Clipboard + │
-                                                              │ ⌘V sintético│
+                                                              │ synthetic ⌘V│
                                                               └─────────────┘
 ```
 
-Fontes em `Sources/MimirCore` (lógica, pipeline, modelos) e
-`Sources/MimirApp` (SwiftUI, controllers, UI). Testes em `Tests/`.
+Sources live in `Sources/MimirCore` (logic, pipeline, models) and
+`Sources/MimirApp` (SwiftUI, controllers, UI). Tests in `Tests/`.
 
-## Contribuindo
+## Contributing
 
-PRs são bem-vindas. Antes de mandar:
+PRs are welcome. Before sending one:
 
-1. `swift test` passa.
-2. `swift build -c release` sem warnings novos.
-3. Strings em pt-BR (o UI é pt-BR por enquanto — se quiser localizar, abra
-   uma issue pra decidirmos a estratégia).
+1. `swift test` passes.
+2. `swift build -c release` with no new warnings.
+3. Keep UI strings in English.
 
-Bug reports detalhados (versão do macOS, chip, log de `/tmp/mimir-swift-build.log`)
-ajudam muito.
+Detailed bug reports (macOS version, chip, `/tmp/mimir-swift-build.log`)
+help a lot.
 
-## Créditos
+## Credits
 
-Veja `NOTICE.md` para a lista completa de dependências e licenças. Em
-particular, agradecimento especial ao pessoal da **argmaxinc/WhisperKit** e do
-**ml-explore/mlx-swift-lm**, sem os quais este projeto não existiria.
+See `NOTICE.md` for the full list of dependencies and licenses. In
+particular, special thanks to the folks behind **argmaxinc/WhisperKit** and
+**ml-explore/mlx-swift-lm**, without whom this project would not exist.
 
-## Licença
+## License
 
-MIT — veja `LICENSE`. Os modelos baixados em tempo de execução têm licenças
-próprias, consulte `NOTICE.md`.
+MIT — see `LICENSE`. The models downloaded at runtime have their own
+licenses; see `NOTICE.md`.

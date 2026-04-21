@@ -131,16 +131,16 @@ final class HermesTerminalHost: NSView {
             state.running = false
             let message = """
 
-            \u{1B}[1;33mHermes não está instalado.\u{1B}[0m
+            \u{1B}[1;33mHermes is not installed.\u{1B}[0m
 
-            O Mimir integra com o Hermes, uma CLI separada e opcional.
-            Pra ativar este painel:
+            Mimir integrates with Hermes, a separate optional CLI.
+            To enable this panel:
 
-              1. Instale o Hermes no seu PATH, ou
-              2. Defina HERMES_PATH apontando pro binário:
-                   export HERMES_PATH=/caminho/para/hermes
+              1. Install Hermes in your PATH, or
+              2. Set HERMES_PATH pointing to the binary:
+                   export HERMES_PATH=/path/to/hermes
 
-            O restante do Mimir funciona normalmente sem o Hermes.
+            The rest of Mimir works normally without Hermes.
 
             """
             terminal.feed(text: message)
@@ -231,7 +231,7 @@ struct HermesIslandHeader: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.28))
-                .help("Arraste daqui para mover")
+                .help("Drag from here to move")
 
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .semibold))
@@ -253,12 +253,12 @@ struct HermesIslandHeader: View {
             Circle()
                 .fill(state.running ? Color.green : Color.red)
                 .frame(width: 6, height: 6)
-                .help(state.running ? "Sessão ativa" : "Processo encerrado")
+                .help(state.running ? "Session active" : "Process ended")
 
             Spacer()
 
-            HermesIconButton(systemName: "arrow.clockwise", help: "Nova sessão", action: onRestart)
-            HermesIconButton(systemName: "minus", help: "Minimizar (Esc)", action: onClose)
+            HermesIconButton(systemName: "arrow.clockwise", help: "New session", action: onRestart)
+            HermesIconButton(systemName: "minus", help: "Minimize (Esc)", action: onClose)
         }
         .padding(.horizontal, 6)
     }

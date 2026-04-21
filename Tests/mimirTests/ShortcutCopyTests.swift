@@ -19,7 +19,7 @@ func activationSubtitleHoldToTalk() {
     let binding = KeyBinding(keyCode: 2, modifiers: (1 << 17) | (1 << 19), label: "D")
     #expect(
         activationSubtitle(mode: .holdToTalk, binding: binding)
-            == "Mantenha ⌥⇧D pressionado enquanto fala; ao soltar, a transcrição é inserida."
+            == "Hold ⌥⇧D while you speak; release to insert the transcription."
     )
 }
 
@@ -28,17 +28,17 @@ func activationSubtitleTapToToggle() {
     let binding = KeyBinding(keyCode: 2, modifiers: (1 << 17) | (1 << 19), label: "D")
     #expect(
         activationSubtitle(mode: .tapToToggle, binding: binding)
-            == "Toque ⌥⇧D para iniciar; toque novamente para parar e inserir."
+            == "Tap ⌥⇧D to start; tap again to stop and insert."
     )
 }
 
 @Test("recorderSubtitle handles missing binding")
 func recorderSubtitleNoBinding() {
-    #expect(recorderSubtitle(binding: nil) == "Nenhum atalho definido — clique para gravar.")
+    #expect(recorderSubtitle(binding: nil) == "No shortcut set — click to record.")
 }
 
 @Test("recorderSubtitle includes current binding when present")
 func recorderSubtitleWithBinding() {
     let binding = KeyBinding(keyCode: 2, modifiers: (1 << 17) | (1 << 19), label: "D")
-    #expect(recorderSubtitle(binding: binding) == "Atual: ⌥⇧D · clique para alterar.")
+    #expect(recorderSubtitle(binding: binding) == "Current: ⌥⇧D · click to change.")
 }

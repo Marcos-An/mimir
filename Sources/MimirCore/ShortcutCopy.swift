@@ -6,17 +6,17 @@ public func keyBindingDisplayString(_ binding: KeyBinding) -> String {
 
 public func recorderSubtitle(binding: KeyBinding?) -> String {
     guard let binding else {
-        return "Nenhum atalho definido — clique para gravar."
+        return "No shortcut set — click to record."
     }
-    return "Atual: \(keyBindingDisplayString(binding)) · clique para alterar."
+    return "Current: \(keyBindingDisplayString(binding)) · click to change."
 }
 
 public func activationSubtitle(mode: ActivationMode, binding: KeyBinding) -> String {
     let shortcut = keyBindingDisplayString(binding)
     switch mode {
     case .holdToTalk:
-        return "Mantenha \(shortcut) pressionado enquanto fala; ao soltar, a transcrição é inserida."
+        return "Hold \(shortcut) while you speak; release to insert the transcription."
     case .tapToToggle:
-        return "Toque \(shortcut) para iniciar; toque novamente para parar e inserir."
+        return "Tap \(shortcut) to start; tap again to stop and insert."
     }
 }

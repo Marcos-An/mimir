@@ -91,9 +91,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Mimir precisa do microfone para gravar sua fala localmente.</string>
+  <string>Mimir needs microphone access to record your speech locally.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Mimir precisa de acesso ao reconhecimento de fala para transcrever sua voz localmente no dispositivo.</string>
+  <string>Mimir needs speech recognition access to transcribe your voice on-device.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

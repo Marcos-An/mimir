@@ -38,12 +38,12 @@ struct SetupOverlayView: View {
                 .onAppear { pulse = true }
 
                 VStack(spacing: 12) {
-                    Text("Estamos preparando tudo pra você")
+                    Text("We're getting everything ready for you")
                         .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(Color(red: 0.08, green: 0.09, blue: 0.15))
                         .multilineTextAlignment(.center)
 
-                    Text("O Mimir está baixando o cérebro que vai polir sua fala. Isso acontece só uma vez e depois fica tudo instantâneo — sem depender de internet, sem mandar seu áudio pra lugar nenhum.")
+                    Text("Mimir is downloading the brain that will polish your speech. This happens only once and everything stays instant afterwards — no internet needed, your audio never leaves the machine.")
                         .font(.system(size: 15))
                         .foregroundStyle(Color(red: 0.32, green: 0.34, blue: 0.42))
                         .multilineTextAlignment(.center)
@@ -76,14 +76,14 @@ struct SetupOverlayView: View {
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color(red: 0.2, green: 0.22, blue: 0.3))
                         Spacer()
-                        Text("≈ 1,5 GB · uma vez só")
+                        Text("≈ 1.5 GB · one time only")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(red: 0.45, green: 0.47, blue: 0.55))
                     }
                     .frame(width: 380)
                 }
 
-                Text("Pode deixar rolando — te aviso quando estiver pronto.")
+                Text("Feel free to leave it running — I'll let you know when it's ready.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color(red: 0.45, green: 0.47, blue: 0.55))
                     .padding(.top, 6)
@@ -115,9 +115,9 @@ struct SetupOverlayView: View {
     }
 
     private var percentLabel: String {
-        if monitor.isIndeterminate { return "Baixando…" }
+        if monitor.isIndeterminate { return "Downloading…" }
         let pct = Int(monitor.fractionCompleted * 100)
-        return pct <= 0 ? "Conectando…" : "\(pct)%"
+        return pct <= 0 ? "Connecting…" : "\(pct)%"
     }
 }
 

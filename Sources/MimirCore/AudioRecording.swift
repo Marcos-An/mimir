@@ -223,7 +223,7 @@ public actor MacAudioRecorder: AudioRecording {
 
         let nativeFormat = input.outputFormat(forBus: 0)
         guard nativeFormat.sampleRate > 0, nativeFormat.channelCount > 0 else {
-            throw MimirError.transcriptionFailed("Dispositivo de entrada inválido (rate=\(nativeFormat.sampleRate), ch=\(nativeFormat.channelCount)).")
+            throw MimirError.transcriptionFailed("Invalid input device (rate=\(nativeFormat.sampleRate), ch=\(nativeFormat.channelCount)).")
         }
 
         let writeSettings: [String: Any] = [
@@ -242,7 +242,7 @@ public actor MacAudioRecorder: AudioRecording {
         } catch {
             let nsError = error as NSError
             print("[Mimir] AVAudioFile create failed: domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
-            throw MimirError.transcriptionFailed("Falha ao criar arquivo de áudio: \(nsError.localizedDescription)")
+            throw MimirError.transcriptionFailed("Failed to create audio file: \(nsError.localizedDescription)")
         }
 
         let monitor = levelMonitor
@@ -266,7 +266,7 @@ public actor MacAudioRecorder: AudioRecording {
             input.removeTap(onBus: 0)
             let nsError = error as NSError
             print("[Mimir] AVAudioEngine start failed: domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
-            throw MimirError.transcriptionFailed("Falha ao iniciar áudio: \(nsError.localizedDescription)")
+            throw MimirError.transcriptionFailed("Failed to start audio: \(nsError.localizedDescription)")
         }
 
         self.engine = engine
@@ -404,7 +404,7 @@ public actor MacAudioRecorder: AudioRecording {
 
     private func setInputDevice(_ deviceID: AudioDeviceID, onInput node: AVAudioInputNode) throws {
         guard let unit = node.audioUnit else {
-            throw MimirError.transcriptionFailed("Audio unit indisponível no inputNode.")
+            throw MimirError.transcriptionFailed("Audio unit unavailable on inputNode.")
         }
         var id = deviceID
         let status = AudioUnitSetProperty(
@@ -416,8 +416,8 @@ public actor MacAudioRecorder: AudioRecording {
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
         if status != noErr {
-            print("[Mimir] AudioUnitSetProperty(CurrentDevice) falhou com status \(status)")
-            throw MimirError.transcriptionFailed("Não foi possível selecionar o microfone (status \(status)).")
+            print("[Mimir] AudioUnitSetProperty(CurrentDevice) failed with status \(status)")
+            throw MimirError.transcriptionFailed("Could not select microphone (status \(status)).")
         }
     }
 }

@@ -135,18 +135,18 @@ public actor MLXPostProcessor: TextPostProcessing {
     static func userPrompt(for transcript: String, style: PostProcessingStyle) -> String {
         let taskLine: String = switch style {
         case .disabled:
-            "Se não houver nada para ajustar, devolva a transcrição exatamente como recebeu."
+            "If there is nothing to adjust, return the transcription exactly as you received it."
         case .cleanup:
-            "Faça apenas uma revisão conservadora da transcrição abaixo seguindo as regras do sistema."
+            "Do only a conservative review of the transcription below, following the system rules."
         case .structured:
-            "Formate a transcrição de ditado abaixo seguindo as regras do sistema."
+            "Format the dictation transcription below following the system rules."
         }
 
         return """
         \(taskLine)
-        Responda apenas com o texto final.
+        Reply only with the final text.
 
-        Transcrição:
+        Transcription:
         \(transcript)
         """
     }
@@ -161,18 +161,18 @@ public actor MLXPostProcessor: TextPostProcessing {
     }
 
     private static let cleanupPrompt = """
-    Revisor de transcrição de ditado. Saída: apenas o texto final, sem aspas nem comentários.
-    Idioma: mesmo do input, mesma variante, mesmo alfabeto. Não traduza.
-    Fidelidade: preserve palavras, fatos, nomes, números, URLs, código. Não invente, não complete, não resuma, não reorganize.
-    Corrija apenas: ortografia, acentuação, capitalização, pontuação. Remova só hesitações ("ãh", "é") e repetições acidentais óbvias.
+    Dictation transcription reviewer. Output: only the final text, no quotes or comments.
+    Language: same as input, same variant, same alphabet. Do not translate.
+    Fidelity: preserve words, facts, names, numbers, URLs, code. Do not invent, do not complete, do not summarize, do not reorganize.
+    Fix only: spelling, diacritics, capitalization, punctuation. Remove only hesitations ("uh", "um") and obvious accidental repetitions.
     """
 
     private static let structuredPrompt = """
-    Formatador de transcrição de ditado. Melhora legibilidade sem alterar conteúdo. Saída: só o texto final, sem aspas nem comentários.
-    Idioma: mesmo do input, mesma variante, mesmo alfabeto. Não traduza.
-    Fidelidade: preserve palavras, fatos, nomes, números, URLs, código. Não invente, não complete pensamentos, não resuma, não reformule.
-    Faça: ortografia, acentuação, capitalização, pontuação, quebras de frase/parágrafo quando óbvias. Listas com marcadores só se o ditado claramente enumerar. Texto corrido caso contrário.
-    Não faça: títulos, seções, resumos, conclusão. Não reorganize em tópicos. Na dúvida, mínima intervenção.
+    Dictation transcription formatter. Improve readability without changing content. Output: only the final text, no quotes or comments.
+    Language: same as input, same variant, same alphabet. Do not translate.
+    Fidelity: preserve words, facts, names, numbers, URLs, code. Do not invent, do not complete thoughts, do not summarize, do not rephrase.
+    Do: spelling, diacritics, capitalization, punctuation, sentence/paragraph breaks when obvious. Bulleted lists only when the dictation clearly enumerates. Flowing text otherwise.
+    Don't: headings, sections, summaries, conclusions. Do not reorganize into topics. When in doubt, minimum intervention.
     """
 
     private func ensureLoaded() async throws -> ModelContainer {
@@ -184,7 +184,7 @@ public actor MLXPostProcessor: TextPostProcessing {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 700_000_000)
                 guard !Task.isCancelled else { return }
-                m.start(label: "Baixando modelo", indeterminate: true)
+                m.start(label: "Downloading model", indeterminate: true)
             }
         }
 

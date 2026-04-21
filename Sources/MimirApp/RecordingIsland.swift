@@ -150,10 +150,10 @@ private struct RecordingIslandView: View {
     private var statusLabel: String {
         let prefix = isHermesMode ? "Hermes · " : ""
         switch model.phase {
-        case .recording: return prefix + "Gravando"
-        case .transcribing: return prefix + "Transcrevendo"
-        case .postProcessing: return prefix + "Pensando"
-        case .inserting: return prefix + (isHermesMode ? "Enviando" : "Inserindo")
+        case .recording: return prefix + "Recording"
+        case .transcribing: return prefix + "Transcribing"
+        case .postProcessing: return prefix + "Thinking"
+        case .inserting: return prefix + (isHermesMode ? "Sending" : "Inserting")
         default: return ""
         }
     }
@@ -463,7 +463,7 @@ private struct MetricsFlashView: View {
                 .foregroundStyle(
                     metrics.streamingUsed ? Color.green.opacity(0.85) : Color.yellow.opacity(0.85)
                 )
-                .help(metrics.streamingUsed ? "Streaming ativo" : "Fallback: transcreveu arquivo inteiro no stop")
+                .help(metrics.streamingUsed ? "Streaming active" : "Fallback: transcribed the whole file on stop")
         }
         .frame(maxWidth: .infinity)
         .frame(height: 28)

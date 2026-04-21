@@ -37,11 +37,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "Geral"
-        case .audio: return "Áudio"
+        case .general: return "General"
+        case .audio: return "Audio"
         case .pipeline: return "Pipeline"
-        case .permissions: return "Permissões"
-        case .about: return "Sobre"
+        case .permissions: return "Permissions"
+        case .about: return "About"
         }
     }
 }
@@ -76,7 +76,7 @@ private struct JournalTopBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Ajustes")
+            .help("Settings")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
@@ -100,7 +100,7 @@ private struct JournalTopBar: View {
             if searchExpanded || !searchQuery.isEmpty || searchFocused {
                 ZStack(alignment: .leading) {
                     if searchQuery.isEmpty {
-                        Text("Buscar no diário…")
+                        Text("Search the journal…")
                             .font(.system(size: 12))
                             .foregroundStyle(MimirTheme.tertiaryInk)
                     }
@@ -213,23 +213,23 @@ private struct JournalView: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .alert("Apagar esta transcrição?", isPresented: Binding(
+        .alert("Delete this transcription?", isPresented: Binding(
             get: { pendingDeleteID != nil },
             set: { if !$0 { pendingDeleteID = nil } }
         )) {
-            Button("Cancelar", role: .cancel) { pendingDeleteID = nil }
-            Button("Apagar", role: .destructive) {
+            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
+            Button("Delete", role: .destructive) {
                 if let id = pendingDeleteID { history.delete(id) }
                 pendingDeleteID = nil
             }
         } message: {
-            Text("Essa ação não pode ser desfeita.")
+            Text("This action cannot be undone.")
         }
-        .alert("Apagar tudo?", isPresented: $showClearAlert) {
-            Button("Cancelar", role: .cancel) {}
-            Button("Apagar", role: .destructive) { history.clear() }
+        .alert("Delete everything?", isPresented: $showClearAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { history.clear() }
         } message: {
-            Text("Você vai perder \(history.entries.count) transcrições. Essa ação não pode ser desfeita.")
+            Text("You'll lose \(history.entries.count) transcriptions. This action cannot be undone.")
         }
     }
 
@@ -256,7 +256,7 @@ private struct JournalView: View {
 
     private var streamHeader: some View {
         HStack {
-            Text(isSearching ? "Resultados" : "Diário")
+            Text(isSearching ? "Results" : "Journal")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(MimirTheme.secondaryInk)
                 .kerning(1.4)
@@ -265,7 +265,7 @@ private struct JournalView: View {
                 Button {
                     showClearAlert = true
                 } label: {
-                    Text("Limpar tudo")
+                    Text("Clear all")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(MimirTheme.red.opacity(0.85))
                 }
@@ -280,10 +280,10 @@ private struct JournalView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 28))
                 .foregroundStyle(MimirTheme.ink.opacity(0.2))
-            Text("Nada por aqui.")
+            Text("Nothing here.")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(MimirTheme.ink)
-            Text("Tente outros termos.")
+            Text("Try different terms.")
                 .font(.system(size: 12))
                 .foregroundStyle(MimirTheme.secondaryInk)
         }
@@ -325,13 +325,13 @@ private struct StatsHero: View {
             }
 
             HStack(alignment: .top, spacing: 0) {
-                statPill(number: "\(weekCount)", label: "ditados 7 dias")
+                statPill(number: "\(weekCount)", label: "dictations 7 days")
                 divider
                 statPill(number: "\(history.entries.count)", label: "total")
                 divider
-                statPill(number: "\(history.totalWords)", label: "palavras")
+                statPill(number: "\(history.totalWords)", label: "words")
                 divider
-                statPill(number: formatDuration(history.totalSeconds), label: "falando")
+                statPill(number: formatDuration(history.totalSeconds), label: "speaking")
                 Spacer()
             }
             .padding(.top, 4)
@@ -382,7 +382,7 @@ private struct StatsHero: View {
 
     private var darkShortcutChip: some View {
         VStack(alignment: .trailing, spacing: 5) {
-            Text("ATALHO")
+            Text("SHORTCUT")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(mutedInk)
                 .kerning(1.2)
@@ -404,28 +404,28 @@ private struct StatsHero: View {
 
     private var dateLabel: String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "pt_BR")
-        f.dateFormat = "EEEE, d 'de' MMMM"
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "EEEE, MMMM d"
         return f.string(from: Date())
     }
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
-        case 0..<6: return "Boa madrugada."
-        case 6..<12: return "Bom dia."
-        case 12..<18: return "Boa tarde."
-        default: return "Boa noite."
+        case 0..<6: return "Late night."
+        case 6..<12: return "Good morning."
+        case 12..<18: return "Good afternoon."
+        default: return "Good evening."
         }
     }
 
     private var summary: String {
         if weekCount == 0 {
-            return "Nada ditado nos últimos 7 dias. Aperta o atalho em qualquer app e fala uma frase — vai ficar instantâneo."
+            return "Nothing dictated in the last 7 days. Hit your shortcut in any app and speak a sentence — it'll feel instant."
         } else if weekCount == 1 {
-            return "Você ditou uma vez esta semana. Segue o ritmo."
+            return "You dictated once this week. Keep the rhythm."
         } else {
-            return "Você ditou \(weekCount) vezes nos últimos 7 dias. Bom ritmo."
+            return "You dictated \(weekCount) times in the last 7 days. Good pace."
         }
     }
 
@@ -485,10 +485,10 @@ private struct WelcomeHero: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Fala que a gente ouve.")
+                Text("Speak, we're listening.")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(MimirTheme.ink)
-                Text("Aperte o atalho em qualquer app, dite em voz alta e o Mimir transcreve, polui e cola pra você. Tudo rodando local — seu áudio não sobe pra lugar nenhum.")
+                Text("Hit your shortcut in any app, speak out loud and Mimir transcribes, polishes, and pastes it for you. All running locally — your audio never leaves the machine.")
                     .font(.system(size: 15))
                     .foregroundStyle(MimirTheme.secondaryInk)
                     .lineSpacing(4)
@@ -496,9 +496,9 @@ private struct WelcomeHero: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                stepRow(number: "1", text: "Abra qualquer app onde você escreve.")
-                stepRow(number: "2", text: "Aperte \(shortcutLabel) e fale normalmente.")
-                stepRow(number: "3", text: "Solte. O texto polido aparece no lugar.")
+                stepRow(number: "1", text: "Open any app where you type.")
+                stepRow(number: "2", text: "Press \(shortcutLabel) and speak normally.")
+                stepRow(number: "3", text: "Release. The polished text shows up in place.")
             }
             .padding(.top, 4)
         }
@@ -565,18 +565,18 @@ private struct ShortcutChip: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 5) {
-            Text("ATALHO")
+            Text("SHORTCUT")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(MimirTheme.secondaryInk)
                 .kerning(1.2)
             Text(label)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(MimirTheme.ink)
+                .foregroundStyle(Color.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.white.opacity(0.75))
+                        .fill(Color.black.opacity(0.55))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -692,7 +692,7 @@ private struct QuoteCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(copied ? "Copiado" : "Copiar")
+            .help(copied ? "Copied" : "Copy")
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
@@ -702,7 +702,7 @@ private struct QuoteCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Apagar")
+            .help("Delete")
         }
         .opacity(hovering ? 1 : 0)
     }
@@ -777,17 +777,17 @@ private struct MetricsPopoverContent: View {
     }
 
     private var comparisonText: String {
-        guard let r = currentRatio else { return "sem duração de referência" }
+        guard let r = currentRatio else { return "no reference duration" }
         guard let median = medianHistorical, !historicalRatios.isEmpty else {
-            return "primeira transcrição · \(String(format: "%.0f", r * 100))% do áudio em bloqueio"
+            return "first transcription · \(String(format: "%.0f", r * 100))% of the audio in latency"
         }
         let delta = (r - median) / median * 100
         let n = historicalRatios.count
         if abs(delta) < 5 {
-            return "típica · igual à mediana das últimas \(n)"
+            return "typical · matches the median of the last \(n)"
         }
-        let word = delta < 0 ? "rápida" : "lenta"
-        return "\(Int(abs(delta)))% mais \(word) que a mediana das últimas \(n)"
+        let word = delta < 0 ? "faster" : "slower"
+        return "\(Int(abs(delta)))% \(word) than the median of the last \(n)"
     }
 
     // MARK: - Body
@@ -816,11 +816,11 @@ private struct MetricsPopoverContent: View {
         HStack(spacing: 8) {
             Image(systemName: "chart.bar.doc.horizontal")
                 .font(.system(size: 13, weight: .semibold))
-            Text("Telemetria")
+            Text("Telemetry")
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
             if let audio = recordingDuration {
-                Text("\(DurationFormat.short(audio)) áudio")
+                Text("\(DurationFormat.short(audio)) audio")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -836,7 +836,7 @@ private struct MetricsPopoverContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(DurationFormat.short(metrics.stopToPasteSeconds))
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    Text("bloqueio stop→paste")
+                    Text("stop→paste latency")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -876,9 +876,9 @@ private struct MetricsPopoverContent: View {
 
     private var verdictLabel: String {
         switch verdict {
-        case .fast: return "RÁPIDA"
+        case .fast: return "FAST"
         case .normal: return "NORMAL"
-        case .slow: return "LENTA"
+        case .slow: return "SLOW"
         }
     }
 
@@ -902,7 +902,7 @@ private struct MetricsPopoverContent: View {
 
     private var breakdownSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("ONDE O TEMPO FOI")
+            Text("WHERE TIME WENT")
                 .font(.system(size: 9, weight: .bold))
                 .tracking(1.2)
                 .foregroundStyle(.secondary)
@@ -964,7 +964,7 @@ private struct MetricsPopoverContent: View {
             HStack(spacing: 6) {
                 Image(systemName: showingTechnicalDetails ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .bold))
-                Text(showingTechnicalDetails ? "Ocultar detalhes técnicos" : "Detalhes técnicos")
+                Text(showingTechnicalDetails ? "Hide technical details" : "Technical details")
                     .font(.system(size: 11, weight: .medium))
                 Spacer()
             }
@@ -988,7 +988,7 @@ private struct MetricsPopoverContent: View {
                 row("Real-time factor", String(format: "%.2f×", rtf))
             }
             if let ft = metrics.firstTokenLatency {
-                row("1º token", DurationFormat.short(ft))
+                row("First token", DurationFormat.short(ft))
             }
             if let load = metrics.whisperModelLoadSeconds, load > 0 {
                 row("Model load", DurationFormat.short(load))
@@ -1000,24 +1000,24 @@ private struct MetricsPopoverContent: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle("STREAMING & COMMITS")
             row("Status",
-                value: metrics.streamingUsed ? "🔗 ativo" : "⚠︎ fallback",
+                value: metrics.streamingUsed ? "🔗 active" : "⚠︎ fallback",
                 valueColor: metrics.streamingUsed ? .green : .yellow)
             if let reason = metrics.fallbackReason {
-                row("Motivo", value: reason, valueColor: .yellow)
+                row("Reason", value: reason, valueColor: .yellow)
             }
             if metrics.streamingCommitCount > 0 {
-                row("Commits", "\(metrics.streamingCommitCount) de \(metrics.incrementalAttemptCount) tentativas")
+                row("Commits", "\(metrics.streamingCommitCount) of \(metrics.incrementalAttemptCount) attempts")
                 if let avg = metrics.streamingAvgCommitSeconds {
-                    row("Média por commit", DurationFormat.short(avg))
+                    row("Avg per commit", DurationFormat.short(avg))
                 }
             }
             if let cov = metrics.streamingCoverageRatio {
-                row("Cobertura",
+                row("Coverage",
                     value: String(format: "%.0f%%", cov * 100),
                     valueColor: coverageColor(cov))
             }
             if metrics.incrementalErrorCount > 0 {
-                row("Erros", value: "\(metrics.incrementalErrorCount)", valueColor: .red)
+                row("Errors", value: "\(metrics.incrementalErrorCount)", valueColor: .red)
             }
         }
     }
@@ -1098,7 +1098,7 @@ private struct SettingsSheetView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Ajustes")
+                Text("Settings")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(MimirTheme.ink)
                 Text(subtitle)
@@ -1156,11 +1156,11 @@ private struct SettingsSheetView: View {
 
     private var subtitle: String {
         switch selected {
-        case .general: return "Atalho global, modo de ativação e idioma."
-        case .audio: return "Entrada de microfone usada pelo Mimir."
-        case .pipeline: return "Transcrição, pós-processamento e inserção."
-        case .permissions: return "Permissões necessárias para o atalho global funcionar."
-        case .about: return "Sobre o Mimir."
+        case .general: return "Global shortcut, activation mode, and language."
+        case .audio: return "Microphone input used by Mimir."
+        case .pipeline: return "Transcription, post-processing, and insertion."
+        case .permissions: return "Permissions needed for the global shortcut to work."
+        case .about: return "About Mimir."
         }
     }
 }
@@ -1197,24 +1197,24 @@ func humanizedDate(_ date: Date) -> String {
     let diff = now.timeIntervalSince(date)
     let calendar = Calendar.current
 
-    if diff < 60 { return "agora" }
-    if diff < 3600 { return "há \(Int(diff / 60)) min" }
+    if diff < 60 { return "now" }
+    if diff < 3600 { return "\(Int(diff / 60)) min ago" }
 
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "pt_BR")
+    formatter.locale = Locale(identifier: "en_US")
 
     if calendar.isDateInToday(date) {
-        formatter.dateFormat = "'hoje,' HH:mm"
+        formatter.dateFormat = "'today,' HH:mm"
         return formatter.string(from: date)
     }
     if calendar.isDateInYesterday(date) {
-        formatter.dateFormat = "'ontem,' HH:mm"
+        formatter.dateFormat = "'yesterday,' HH:mm"
         return formatter.string(from: date)
     }
     if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day, days < 7 {
         formatter.dateFormat = "EEE HH:mm"
         return formatter.string(from: date).lowercased()
     }
-    formatter.dateFormat = "d/M HH:mm"
+    formatter.dateFormat = "M/d HH:mm"
     return formatter.string(from: date)
 }

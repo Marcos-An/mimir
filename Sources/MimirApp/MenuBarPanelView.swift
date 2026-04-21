@@ -60,7 +60,8 @@ struct MenuBarPanelView: View {
 
             PanelHeader(
                 phase: model.phase,
-                shortcutLabel: store.settings.activationTrigger.label
+                shortcutLabel: store.settings.activationTrigger.label,
+                activationMode: store.settings.activationMode
             )
 
             Divider().opacity(0.5)
@@ -87,6 +88,7 @@ struct MenuBarPanelView: View {
 private struct PanelHeader: View {
     let phase: AppPhase
     let shortcutLabel: String
+    let activationMode: ActivationMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -103,7 +105,7 @@ private struct PanelHeader: View {
             }
 
             HStack(spacing: 6) {
-                Text("Segure")
+                Text(leadingVerb)
                     .font(.system(size: 12))
                     .foregroundStyle(PanelPalette.secondaryInk)
                 Text(shortcutLabel)
@@ -119,7 +121,7 @@ private struct PanelHeader: View {
                             .stroke(PanelPalette.ink.opacity(0.1), lineWidth: 1)
                     )
                     .foregroundStyle(PanelPalette.ink)
-                Text("e fale.")
+                Text(trailingHint)
                     .font(.system(size: 12))
                     .foregroundStyle(PanelPalette.secondaryInk)
                 Spacer(minLength: 0)
@@ -131,12 +133,26 @@ private struct PanelHeader: View {
 
     private var statusText: String {
         switch phase {
-        case .idle: return "Pronto"
-        case .recording: return "Gravando"
-        case .transcribing: return "Transcrevendo"
-        case .postProcessing: return "Pensando"
-        case .inserting: return "Inserindo"
-        case .error(let message): return "Erro — \(message)"
+        case .idle: return "Ready"
+        case .recording: return "Recording"
+        case .transcribing: return "Transcribing"
+        case .postProcessing: return "Thinking"
+        case .inserting: return "Inserting"
+        case .error(let message): return "Error — \(message)"
+        }
+    }
+
+    private var leadingVerb: String {
+        switch activationMode {
+        case .holdToTalk: return "Hold"
+        case .tapToToggle: return "Tap"
+        }
+    }
+
+    private var trailingHint: String {
+        switch activationMode {
+        case .holdToTalk: return "and speak."
+        case .tapToToggle: return "to start/stop."
         }
     }
 }
@@ -184,7 +200,7 @@ private struct LatestSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Último texto")
+                Text("Latest text")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(PanelPalette.secondaryInk)
                     .kerning(0.4)
@@ -196,7 +212,7 @@ private struct LatestSection: View {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text("Copiar")
+                            Text("Copy")
                                 .font(.system(size: 11, weight: .semibold))
                         }
                         .foregroundStyle(PanelPalette.ink.opacity(0.8))
@@ -216,7 +232,7 @@ private struct LatestSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(phase != .idle ? "Processando…" : "Fale alguma coisa pra começar.")
+                Text(phase != .idle ? "Processing…" : "Say something to get started.")
                     .font(.system(size: 12))
                     .foregroundStyle(PanelPalette.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -224,7 +240,7 @@ private struct LatestSection: View {
 
             if !recent.isEmpty {
                 Divider().opacity(0.5).padding(.vertical, 2)
-                Text("Anteriores")
+                Text("Earlier")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(PanelPalette.secondaryInk)
                     .kerning(0.4)
@@ -285,7 +301,7 @@ private struct RecentItem: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Clique para copiar")
+        .help("Click to copy")
     }
 }
 
@@ -302,7 +318,7 @@ private struct PanelFooter: View {
                 HStack(spacing: 6) {
                     Image(systemName: "rectangle.on.rectangle")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Abrir Mimir")
+                    Text("Open Mimir")
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .foregroundStyle(PanelPalette.ink)
@@ -312,11 +328,11 @@ private struct PanelFooter: View {
             Spacer()
 
             Menu {
-                Button("Sobre o Mimir") {
+                Button("About Mimir") {
                     // Could open about window
                 }
                 Divider()
-                Button("Fechar app") { NSApp.terminate(nil) }
+                Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q", modifiers: .command)
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -358,7 +374,7 @@ private struct DownloadPanelSection: View {
                 Image(systemName: "arrow.down.circle")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(PanelPalette.blue)
-                Text("Preparando modelo")
+                Text("Preparing model")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(PanelPalette.ink)
                 Spacer()
@@ -384,7 +400,7 @@ private struct DownloadPanelSection: View {
             }
             .frame(height: 4)
 
-            Text("~1,5 GB · roda 100% local depois disso")
+            Text("~1.5 GB · runs 100% local after this")
                 .font(.system(size: 11))
                 .foregroundStyle(PanelPalette.secondaryInk)
         }

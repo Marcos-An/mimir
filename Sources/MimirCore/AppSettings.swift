@@ -90,9 +90,9 @@ public enum TranscriptionStrategy: String, Codable, CaseIterable, Equatable, Sen
     public var displayName: String {
         switch self {
         case .batch:
-            "Lote (arquivo inteiro)"
+            "Batch (whole file)"
         case .chunked:
-            "Em chunks (VAD)"
+            "Chunked (VAD)"
         }
     }
 }
@@ -109,19 +109,19 @@ public enum WhisperKitModel: String, Codable, CaseIterable, Equatable, Sendable 
     public var displayName: String {
         switch self {
         case .tiny:
-            "Tiny (39M, muito rápido, qualidade baixa)"
+            "Tiny (39M, very fast, low quality)"
         case .base:
-            "Base (74M, rápido, qualidade ok)"
+            "Base (74M, fast, ok quality)"
         case .small:
-            "Small (244M, bom equilíbrio)"
+            "Small (244M, balanced)"
         case .medium:
-            "Medium (769M, qualidade alta)"
+            "Medium (769M, high quality)"
         case .largeV3TurboQuantized:
-            "Large v3 Turbo quantizado (~950MB, qualidade quase full)"
+            "Large v3 Turbo quantized (~950MB, near-full quality)"
         case .largeV3Turbo:
-            "Large v3 Turbo full (~3GB, qualidade top)"
+            "Large v3 Turbo full (~3GB, top quality)"
         case .largeV3:
-            "Large v3 (1.5B, qualidade máxima, mais lento)"
+            "Large v3 (1.5B, maximum quality, slower)"
         }
     }
 
@@ -154,11 +154,11 @@ public enum PostProcessingStyle: String, Codable, CaseIterable, Equatable, Senda
     public var displayName: String {
         switch self {
         case .disabled:
-            "Desativado"
+            "Disabled"
         case .cleanup:
-            "Correção leve"
+            "Light cleanup"
         case .structured:
-            "Estruturado"
+            "Structured"
         }
     }
 }
@@ -170,9 +170,9 @@ public enum ActivationMode: String, Codable, CaseIterable, Equatable, Sendable {
     public var displayName: String {
         switch self {
         case .holdToTalk:
-            "Segurar para falar"
+            "Hold to talk"
         case .tapToToggle:
-            "Tocar para alternar"
+            "Tap to toggle"
         }
     }
 }
@@ -267,7 +267,7 @@ public enum PostProcessingProvider: String, Codable, CaseIterable, Equatable, Se
     public var displayName: String {
         switch self {
         case .disabled:
-            "Desativado"
+            "Disabled"
         case .mlx:
             "MLX (local)"
         }
@@ -285,9 +285,9 @@ public enum InsertionStrategy: String, Codable, CaseIterable, Equatable, Sendabl
     public var displayName: String {
         switch self {
         case .clipboardPaste:
-            "Colar via área de transferência"
+            "Paste via clipboard"
         case .accessibilityAPI:
-            "Acessibilidade (em breve)"
+            "Accessibility (coming soon)"
         }
     }
 
@@ -308,22 +308,22 @@ public struct LanguageOption: Identifiable, Equatable, Sendable {
     }
 
     public static let supported: [LanguageOption] = [
-        LanguageOption(code: nil, displayName: "Automático (sistema)"),
-        LanguageOption(code: "pt-BR", displayName: "Português (Brasil)"),
-        LanguageOption(code: "pt-PT", displayName: "Português (Portugal)"),
-        LanguageOption(code: "en-US", displayName: "Inglês (EUA)"),
-        LanguageOption(code: "en-GB", displayName: "Inglês (Reino Unido)"),
-        LanguageOption(code: "es-ES", displayName: "Espanhol (Espanha)"),
-        LanguageOption(code: "es-MX", displayName: "Espanhol (México)"),
-        LanguageOption(code: "fr-FR", displayName: "Francês"),
-        LanguageOption(code: "de-DE", displayName: "Alemão"),
-        LanguageOption(code: "it-IT", displayName: "Italiano"),
-        LanguageOption(code: "ja-JP", displayName: "Japonês")
+        LanguageOption(code: nil, displayName: "Automatic (system)"),
+        LanguageOption(code: "pt-BR", displayName: "Portuguese (Brazil)"),
+        LanguageOption(code: "pt-PT", displayName: "Portuguese (Portugal)"),
+        LanguageOption(code: "en-US", displayName: "English (US)"),
+        LanguageOption(code: "en-GB", displayName: "English (UK)"),
+        LanguageOption(code: "es-ES", displayName: "Spanish (Spain)"),
+        LanguageOption(code: "es-MX", displayName: "Spanish (Mexico)"),
+        LanguageOption(code: "fr-FR", displayName: "French"),
+        LanguageOption(code: "de-DE", displayName: "German"),
+        LanguageOption(code: "it-IT", displayName: "Italian"),
+        LanguageOption(code: "ja-JP", displayName: "Japanese")
     ]
 
     public static func displayName(for code: String?) -> String {
         supported.first(where: { $0.code == code })?.displayName
             ?? code
-            ?? "Automático (sistema)"
+            ?? "Automatic (system)"
     }
 }
