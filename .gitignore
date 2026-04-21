@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Swift/Xcode build artifacts
+/.build
+/dist
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# Credenciais (nunca commitar)
+.netrc
+.env
+.env.local
+
+# Logs temporários
+*.log
+
+# Iconset intermediário gerado por scripts/make_icns.sh
+/Assets/AppIcon.iconset
+/Assets/*.icns.backup.*
+
+# Ferramentas locais de desenvolvimento (Claude Code, etc.)
+/.claude/
+
