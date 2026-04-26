@@ -13,6 +13,12 @@ public protocol SessionResettableSpeechProvider: SpeechToTextProviding {
 
 public protocol TextPostProcessing: Sendable {
     func polish(_ transcript: String) async throws -> String
+    func polish(_ transcript: String, intent: PolishIntent) async throws -> String
+    func polish(
+        _ transcript: String,
+        intent: PolishIntent,
+        onChunk: @Sendable (String) async -> Void
+    ) async throws -> String
 }
 
 public extension TextPostProcessing {
@@ -24,6 +30,23 @@ public extension TextPostProcessing {
         onChunk: @Sendable (String) async -> Void
     ) async throws -> String {
         let result = try await polish(transcript)
+        await onChunk(result)
+        return result
+    }
+
+    /// Intent-aware variant. Providers that understand `PolishIntent` (like the
+    /// MLX post-processor) should override. The default ignores the intent and
+    /// falls back to the provider's configured behavior.
+    func polish(_ transcript: String, intent: PolishIntent) async throws -> String {
+        try await polish(transcript)
+    }
+
+    func polish(
+        _ transcript: String,
+        intent: PolishIntent,
+        onChunk: @Sendable (String) async -> Void
+    ) async throws -> String {
+        let result = try await polish(transcript, intent: intent)
         await onChunk(result)
         return result
     }
@@ -61,7 +84,9 @@ public struct LocalPipeline: Sendable {
     public func process(
         audioFileURL: URL,
         languageHint: String?,
+        defaultIntent: PolishIntent = .defaults,
         onPhase: (@Sendable (AppPhase) async -> Void)? = nil,
+        onIntent: (@Sendable (PolishIntent) async -> Void)? = nil,
         onPolishChunk: (@Sendable (String) async -> Void)? = nil
     ) async throws -> LocalPipelineResult {
         let transcript = try await transcribeAudio(
@@ -71,39 +96,57 @@ public struct LocalPipeline: Sendable {
         )
         return try await process(
             transcription: transcript,
+            defaultIntent: defaultIntent,
             onPhase: onPhase,
+            onIntent: onIntent,
             onPolishChunk: onPolishChunk
         )
     }
 
     public func process(
         transcription: SpeechTranscription,
+        defaultIntent: PolishIntent = .defaults,
         onPhase: (@Sendable (AppPhase) async -> Void)? = nil,
+        onIntent: (@Sendable (PolishIntent) async -> Void)? = nil,
         onPolishChunk: (@Sendable (String) async -> Void)? = nil
     ) async throws -> LocalPipelineResult {
+        // Route command prefixes ("prompt ...", "traduzir ...") to the
+        // matching intent and strip the trigger word from the payload.
+        let routed = CommandPrefixRouter.route(transcription.text)
+        let intent = routed.intent == .defaults ? defaultIntent : routed.intent
+        let routedTranscription = SpeechTranscription(
+            text: routed.text,
+            language: transcription.language,
+            metrics: transcription.metrics
+        )
+        if intent != .defaults {
+            await onIntent?(intent)
+        }
+
         let finalText: String
         var postSeconds: TimeInterval?
         if let postProcessor {
             await onPhase?(.postProcessing)
             let start = Date()
             if let onPolishChunk {
-                finalText = try await postProcessor.polish(transcription.text) { chunk in
+                finalText = try await postProcessor.polish(routedTranscription.text, intent: intent) { chunk in
                     await onPolishChunk(chunk)
                 }
             } else {
-                finalText = try await postProcessor.polish(transcription.text)
+                finalText = try await postProcessor.polish(routedTranscription.text, intent: intent)
             }
             postSeconds = Date().timeIntervalSince(start)
         } else {
-            finalText = transcription.text
+            finalText = routedTranscription.text
         }
         await onPhase?(.inserting)
         let insertStart = Date()
         try await textInserter.insert(finalText)
         let insertSeconds = Date().timeIntervalSince(insertStart)
         return LocalPipelineResult(
-            transcription: transcription,
+            transcription: routedTranscription,
             outputText: finalText,
+            activeIntent: intent,
             postProcessingSeconds: postSeconds,
             insertionSeconds: insertSeconds
         )

@@ -3,6 +3,7 @@ import Foundation
 public struct AppSettings: Codable, Equatable, Sendable {
     public var activationMode: ActivationMode
     public var activationTrigger: KeyBinding
+    public var promptRewriteActivationTrigger: KeyBinding
     public var hermesActivationTrigger: KeyBinding
     public var transcriptionProvider: TranscriptionProvider
     public var transcriptionStrategy: TranscriptionStrategy
@@ -17,6 +18,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public init(
         activationMode: ActivationMode,
         activationTrigger: KeyBinding,
+        promptRewriteActivationTrigger: KeyBinding,
         hermesActivationTrigger: KeyBinding,
         transcriptionProvider: TranscriptionProvider,
         transcriptionStrategy: TranscriptionStrategy,
@@ -30,6 +32,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     ) {
         self.activationMode = activationMode
         self.activationTrigger = activationTrigger
+        self.promptRewriteActivationTrigger = promptRewriteActivationTrigger
         self.hermesActivationTrigger = hermesActivationTrigger
         self.transcriptionProvider = transcriptionProvider
         self.transcriptionStrategy = transcriptionStrategy
@@ -43,7 +46,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case activationMode, activationTrigger, hermesActivationTrigger
+        case activationMode, activationTrigger, promptRewriteActivationTrigger, hermesActivationTrigger
         case transcriptionProvider
         case transcriptionStrategy, whisperKitModel
         case postProcessingProvider, postProcessingStyle
@@ -55,7 +58,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.activationMode = try container.decode(ActivationMode.self, forKey: .activationMode)
         self.activationTrigger = try container.decode(KeyBinding.self, forKey: .activationTrigger)
-        self.hermesActivationTrigger = try container.decodeIfPresent(KeyBinding.self, forKey: .hermesActivationTrigger) ?? .defaultRightOptionSpace
+
+        let promptRewriteFromJSON = try container.decodeIfPresent(KeyBinding.self, forKey: .promptRewriteActivationTrigger)
+        let hermesFromJSON = try container.decodeIfPresent(KeyBinding.self, forKey: .hermesActivationTrigger)
+        if let promptRewriteFromJSON {
+            // Modern schema: each shortcut has its own key.
+            self.promptRewriteActivationTrigger = promptRewriteFromJSON
+            self.hermesActivationTrigger = hermesFromJSON ?? .defaultHermesHandoff
+        } else {
+            // Legacy schema (pre-rename): the key "hermesActivationTrigger" used to
+            // mean the Prompt / Rewrite shortcut. Migrate it there and seed the new
+            // Hermes handoff binding from the default.
+            self.promptRewriteActivationTrigger = hermesFromJSON ?? .defaultRightOptionSpace
+            self.hermesActivationTrigger = .defaultHermesHandoff
+        }
+
         self.transcriptionProvider = try container.decode(TranscriptionProvider.self, forKey: .transcriptionProvider)
         self.transcriptionStrategy = try container.decodeIfPresent(TranscriptionStrategy.self, forKey: .transcriptionStrategy) ?? .chunked
         self.whisperKitModel = try container.decodeIfPresent(WhisperKitModel.self, forKey: .whisperKitModel) ?? .largeV3TurboQuantized
@@ -70,12 +87,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public static let `default` = AppSettings(
         activationMode: .tapToToggle,
         activationTrigger: .defaultRightCommand,
-        hermesActivationTrigger: .defaultRightOptionSpace,
+        promptRewriteActivationTrigger: .defaultRightOptionSpace,
+        hermesActivationTrigger: .defaultHermesHandoff,
         transcriptionProvider: .whisperKit,
         transcriptionStrategy: .chunked,
         whisperKitModel: .largeV3TurboQuantized,
         postProcessingProvider: .mlx,
-        postProcessingStyle: .structured,
+        postProcessingStyle: .cleanDictation,
         insertionStrategy: .clipboardPaste,
         shouldAutoPaste: true,
         preferredLanguage: nil,
@@ -149,6 +167,7 @@ public enum WhisperKitModel: String, Codable, CaseIterable, Equatable, Sendable 
 public enum PostProcessingStyle: String, Codable, CaseIterable, Equatable, Sendable {
     case disabled
     case cleanup
+    case cleanDictation
     case structured
 
     public var displayName: String {
@@ -157,6 +176,8 @@ public enum PostProcessingStyle: String, Codable, CaseIterable, Equatable, Senda
             "Disabled"
         case .cleanup:
             "Light cleanup"
+        case .cleanDictation:
+            "Clean Dictation"
         case .structured:
             "Structured"
         }
@@ -181,15 +202,19 @@ public struct KeyBinding: Codable, Equatable, Sendable {
     public var keyCode: UInt16
     public var modifiers: UInt
     public var label: String
+    /// Optional device-specific modifier mask for chords that must distinguish
+    /// left/right physical modifier keys (for example Right ⌥ + Left ⇧).
+    public var deviceMask: UInt?
 
-    public init(keyCode: UInt16, modifiers: UInt, label: String) {
+    public init(keyCode: UInt16, modifiers: UInt, label: String, deviceMask: UInt? = nil) {
         self.keyCode = keyCode
         self.modifiers = modifiers
         self.label = label
+        self.deviceMask = deviceMask
     }
 
     public var isModifierOnly: Bool {
-        Self.modifierKeyCodes.contains(keyCode)
+        Self.modifierKeyCodes.contains(keyCode) && modifiers == 0
     }
 
     /// Combo formado apenas por modificadores (sem tecla principal). Exemplo: ⌃+⇧.
@@ -213,9 +238,25 @@ public struct KeyBinding: Codable, Equatable, Sendable {
         label: "⌥ Space"
     )
 
+    /// Default para o handoff do Hermes: Right ⌥ + Left ⇧.
+    /// `modifiers` stores device-independent Option+Shift; `deviceMask`
+    /// pins the physical sides to right option (0x40) and left shift (0x02).
+    public static let defaultHermesHandoff = KeyBinding(
+        keyCode: 0,
+        modifiers: (1 << 19) | (1 << 17),
+        label: "Right ⌥ + Left ⇧",
+        deviceMask: 0x40 | 0x02
+    )
+
     public var keyCaps: [String] {
         if isModifierOnly {
             return [label]
+        }
+        if isModifierCombo, deviceMask != nil {
+            return label
+                .split(separator: "+")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
         }
         var caps: [String] = []
         if modifiers & (1 << 18) != 0 { caps.append("⌃") }   // control
@@ -231,6 +272,23 @@ public struct KeyBinding: Codable, Equatable, Sendable {
         if !key.isEmpty { caps.append(key) }
         return caps
     }
+
+    public func matchesModifierFlags(rawFlags: UInt) -> Bool {
+        let expected = modifiers & Self.deviceIndependentMask
+        let actual = rawFlags & Self.deviceIndependentMask
+        guard actual == expected else { return false }
+        if let deviceMask {
+            return (rawFlags & deviceMask) == deviceMask
+        }
+        return true
+    }
+
+    private static let deviceIndependentMask: UInt =
+        (1 << 17) | // shift
+        (1 << 18) | // control
+        (1 << 19) | // option
+        (1 << 20) | // command
+        (1 << 23)   // function
 }
 
 public enum TranscriptionProvider: String, Codable, CaseIterable, Equatable, Sendable {

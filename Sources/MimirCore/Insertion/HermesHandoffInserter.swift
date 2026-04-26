@@ -1,7 +1,7 @@
 import Foundation
 
-/// Envia o texto transcrito para a ilha do Hermes via callback in-process.
-/// Usado quando o modo de ditado é `.hermes`.
+/// Envia o texto transcrito para a ilha do Hermes via callback in-process,
+/// quando algum integrador externo precisar rotear ditado para o REPL embutido.
 public struct HermesHandoffInserter: TextInserting {
     public typealias Handoff = @Sendable (String) async throws -> Void
 

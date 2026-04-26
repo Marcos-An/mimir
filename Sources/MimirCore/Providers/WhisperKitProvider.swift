@@ -186,7 +186,9 @@ public actor WhisperKitProvider: SessionResettableSpeechProvider {
 
         guard !text.isEmpty else {
             let rawSummary = raw.prefix(200)
-            throw MimirError.transcriptionFailed("WhisperKit returned empty transcript (results=\(results.count), raw=\(rawSummary))")
+            let diag = "[Mimir.Whisper] empty transcript treated as no-speech (results=\(results.count), raw=\(rawSummary))\n"
+            FileHandle.standardError.write(diag.data(using: .utf8) ?? Data())
+            throw MimirError.emptyTranscript
         }
 
         // Se acabamos de detectar um idioma (não havia hint), guardar no cache
@@ -269,11 +271,11 @@ public actor WhisperKitProvider: SessionResettableSpeechProvider {
 
         switch strategy {
         case .chunked:
-            // Large/medium rodam com menos workers, sem VAD, sem word timestamps:
-            // o decoder do turbo é raso (4 layers) e interage mal com esses
-            // features, resultando em output vazio. Se não houver hint explícito
-            // de idioma, forçamos pt como fallback — a auto-detecção também
-            // parece falhar no quantizado.
+            // Large/medium: forçamos pt como fallback porque a auto-detecção
+            // também parece falhar no quantizado quando não há hint explícito.
+            // Word timestamps continuam desativados no turbo (decoder raso
+            // interage mal). VAD e worker count subiram pra 8 pra aproveitar
+            // paralelismo real; se surgirem outputs vazios, reavaliar.
             let effectiveLanguage = isLargeModel ? (language ?? "pt") : language
             let effectiveDetect = isLargeModel ? false : detectLanguage
             return WhisperKitProviderConfiguration(
@@ -281,8 +283,8 @@ public actor WhisperKitProvider: SessionResettableSpeechProvider {
                 strategy: strategy,
                 language: effectiveLanguage,
                 detectLanguage: effectiveDetect,
-                concurrentWorkerCount: isLargeModel ? 4 : 8,
-                chunkingMode: isLargeModel ? .none : .vad,
+                concurrentWorkerCount: 8,
+                chunkingMode: .vad,
                 prefersWordTimestamps: isLargeModel ? false : true
             )
         case .batch:
@@ -291,7 +293,7 @@ public actor WhisperKitProvider: SessionResettableSpeechProvider {
                 strategy: strategy,
                 language: language,
                 detectLanguage: detectLanguage,
-                concurrentWorkerCount: isLargeModel ? 2 : 4,
+                concurrentWorkerCount: isLargeModel ? 4 : 8,
                 chunkingMode: .none,
                 prefersWordTimestamps: false
             )
@@ -368,9 +370,71 @@ public actor WhisperKitProvider: SessionResettableSpeechProvider {
         text = text.replacingOccurrences(of: #"\s*\[[^\]]{1,80}\]\s*"#, with: " ", options: .regularExpression)
         text = text.replacingOccurrences(of: #"<\|[^|>]+\|>"#, with: "", options: .regularExpression)
         text = stripCJKHallucinations(text)
+        text = stripTailFarewells(text)
         text = text.replacingOccurrences(of: #" +"#, with: " ", options: .regularExpression)
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Whisper foi treinado em muitos vídeos do YouTube, que tipicamente terminam
+    /// com "thanks for watching" / "obrigado pela atenção" / etc. Em ditado com
+    /// silêncio final ou fala cortada o modelo "completa" com essas frases —
+    /// não é fala real do usuário. Se a última sentença bater uma lista curta
+    /// de farewells conhecidos E for curta (até 5 palavras), removemos.
+    static func stripTailFarewells(_ input: String) -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return input }
+
+        // Remove terminator/whitespace trailing para achar o corpo da última sentença.
+        var stripEndIdx = trimmed.endIndex
+        while stripEndIdx > trimmed.startIndex {
+            let prev = trimmed.index(before: stripEndIdx)
+            let ch = trimmed[prev]
+            if ch.isWhitespace || ".!?".contains(ch) {
+                stripEndIdx = prev
+            } else {
+                break
+            }
+        }
+        let stripped = String(trimmed[..<stripEndIdx])
+        guard !stripped.isEmpty else { return input }
+
+        // Última sentença = depois do último terminator dentro do texto "podado".
+        let lastTerminatorIdx = stripped.lastIndex(where: { ".!?".contains($0) })
+        let tailStart: String.Index = lastTerminatorIdx.map { stripped.index(after: $0) } ?? stripped.startIndex
+
+        let tail = String(stripped[tailStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = tail
+            .replacingOccurrences(of: #"[\p{P}\p{S}]"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard !normalized.isEmpty else { return input }
+        let wordCount = normalized.split(whereSeparator: \.isWhitespace).count
+        guard wordCount > 0, wordCount <= 5 else { return input }
+        guard farewellPhrases.contains(normalized) else { return input }
+
+        // Se o texto inteiro era só o farewell, preserva — o usuário pode ter
+        // realmente dito "obrigado" como mensagem curta pra alguém.
+        let prefix = String(stripped[..<tailStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prefix.isEmpty else { return input }
+        return prefix
+    }
+
+    private static let farewellPhrases: Set<String> = [
+        // pt
+        "obrigado", "obrigada",
+        "muito obrigado", "muito obrigada",
+        "obrigado pela atenção", "obrigada pela atenção",
+        "obrigado por assistir", "obrigada por assistir",
+        "tchau", "valeu",
+        "até a próxima", "até logo", "até mais",
+        "legendado por", "legendas pela equipe",
+        // en
+        "thanks", "thank you",
+        "thanks for watching", "thank you for watching",
+        "see you next time", "see you", "see ya",
+        "bye", "goodbye", "later"
+    ]
 
     /// Whisper alucina frases em japonês/chinês/coreano no fim de áudios com
     /// silêncio ou fala parcial (artefato do treinamento em vídeos do YouTube).

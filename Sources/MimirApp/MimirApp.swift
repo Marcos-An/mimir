@@ -42,6 +42,7 @@ struct MimirApp: App {
         let model = MimirAppModel(store: store, makeSession: factory)
         let hotkey = GlobalHotkeyMonitor(
             dictationTrigger: store.settings.activationTrigger,
+            promptRewriteTrigger: store.settings.promptRewriteActivationTrigger,
             hermesTrigger: store.settings.hermesActivationTrigger,
             mode: store.settings.activationMode,
             model: model
@@ -84,6 +85,9 @@ struct MimirApp: App {
                 .onChange(of: store.settings) { oldValue, newValue in
                     if oldValue.activationTrigger != newValue.activationTrigger {
                         hotkey.updateDictationTrigger(newValue.activationTrigger)
+                    }
+                    if oldValue.promptRewriteActivationTrigger != newValue.promptRewriteActivationTrigger {
+                        hotkey.updatePromptRewriteTrigger(newValue.promptRewriteActivationTrigger)
                     }
                     if oldValue.hermesActivationTrigger != newValue.hermesActivationTrigger {
                         hotkey.updateHermesTrigger(newValue.hermesActivationTrigger)
@@ -241,8 +245,12 @@ struct SettingsOverlay: View {
             VStack(alignment: .leading, spacing: 18) {
                 KeyBindingRecorderRow(title: "Transcription shortcut", binding: $store.settings.activationTrigger)
 
-                KeyBindingRecorderRow(title: "Hermes shortcut", binding: $store.settings.hermesActivationTrigger)
-                Text("Sends the transcription to the Hermes island instead of pasting into the active app.")
+                KeyBindingRecorderRow(title: "Prompt / Rewrite shortcut", binding: $store.settings.promptRewriteActivationTrigger)
+                Text("Records in the blue Prompt / Rewrite mode and turns your dictation into a clearer prompt or rewritten text.")
+                    .helperTextStyle()
+
+                KeyBindingRecorderRow(title: "Send to Hermes shortcut", binding: $store.settings.hermesActivationTrigger)
+                Text("Sends the cleaned dictation to the Hermes island instead of pasting into the active app.")
                     .helperTextStyle()
 
                 MimirDropdown(
@@ -855,10 +863,15 @@ private struct KeyBindingRecorderRow: View {
                     label: Self.modifierOnlyLabel(for: event.keyCode)
                 )
             } else {
+                let rawFlags = event.modifierFlags.rawValue
+                let deviceMask = Self.deviceSpecificModifierMask(from: rawFlags)
                 captured = KeyBinding(
                     keyCode: 0,
                     modifiers: now,
-                    label: Self.modifiersOnlyLabel(from: now)
+                    label: deviceMask == nil
+                        ? Self.modifiersOnlyLabel(from: now)
+                        : Self.deviceSpecificModifiersLabel(from: deviceMask!),
+                    deviceMask: deviceMask
                 )
             }
             return
@@ -904,6 +917,34 @@ private struct KeyBindingRecorderRow: View {
         if modifiers & (1 << 20) != 0 { parts.append("⌘") }
         if modifiers & (1 << 23) != 0 { parts.append("fn") }
         return parts.joined()
+    }
+
+    private static func deviceSpecificModifierMask(from rawFlags: UInt) -> UInt? {
+        // Device-specific bits from NSEvent's raw modifier flags. These let us
+        // preserve side-specific modifier chords such as Right ⌥ + Left ⇧.
+        let known: UInt = 0x00000001 | // left control
+            0x00002000 | // right control
+            0x00000020 | // left option
+            0x00000040 | // right option
+            0x00000002 | // left shift
+            0x00000004 | // right shift
+            0x00000008 | // left command
+            0x00000010   // right command
+        let mask = rawFlags & known
+        return mask == 0 ? nil : mask
+    }
+
+    private static func deviceSpecificModifiersLabel(from deviceMask: UInt) -> String {
+        var parts: [String] = []
+        if deviceMask & 0x00000001 != 0 { parts.append("Left ⌃") }
+        if deviceMask & 0x00002000 != 0 { parts.append("Right ⌃") }
+        if deviceMask & 0x00000020 != 0 { parts.append("Left ⌥") }
+        if deviceMask & 0x00000040 != 0 { parts.append("Right ⌥") }
+        if deviceMask & 0x00000002 != 0 { parts.append("Left ⇧") }
+        if deviceMask & 0x00000004 != 0 { parts.append("Right ⇧") }
+        if deviceMask & 0x00000008 != 0 { parts.append("Left ⌘") }
+        if deviceMask & 0x00000010 != 0 { parts.append("Right ⌘") }
+        return parts.joined(separator: " + ")
     }
 
     private static func modifierOnlyLabel(for keyCode: UInt16) -> String {

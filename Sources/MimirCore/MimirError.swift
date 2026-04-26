@@ -6,6 +6,7 @@ public enum MimirError: LocalizedError, Equatable, Sendable {
     case speechPermissionDenied
     case onDeviceSpeechUnavailable
     case transcriptionFailed(String)
+    case emptyTranscript
     case clipboardAccessFailed
     case accessibilityPermissionDenied
     case noRecordingInProgress
@@ -22,6 +23,8 @@ public enum MimirError: LocalizedError, Equatable, Sendable {
             "On-device speech recognition is unavailable for the selected language on this Mac."
         case .transcriptionFailed(let message):
             "Transcription failed: \(message)"
+        case .emptyTranscript:
+            "No speech was detected."
         case .clipboardAccessFailed:
             "Could not write to the clipboard."
         case .accessibilityPermissionDenied:

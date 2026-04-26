@@ -957,7 +957,12 @@ private struct MetricsPopoverContent: View {
 
     private var disclosureButton: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) {
+            // Keep this state change non-animated. SwiftUI's popover host resizes the
+            // underlying NSPopover when the details section appears; animating that
+            // resize can crash in AppKit's NSResizeMoveHelper on macOS 26.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 showingTechnicalDetails.toggle()
             }
         } label: {
@@ -1005,7 +1010,7 @@ private struct MetricsPopoverContent: View {
             if let reason = metrics.fallbackReason {
                 row("Reason", value: reason, valueColor: .yellow)
             }
-            if metrics.streamingCommitCount > 0 {
+            if metrics.streamingCommitCount > 0 || metrics.incrementalAttemptCount > 0 {
                 row("Commits", "\(metrics.streamingCommitCount) of \(metrics.incrementalAttemptCount) attempts")
                 if let avg = metrics.streamingAvgCommitSeconds {
                     row("Avg per commit", DurationFormat.short(avg))
@@ -1016,8 +1021,20 @@ private struct MetricsPopoverContent: View {
                     value: String(format: "%.0f%%", cov * 100),
                     valueColor: coverageColor(cov))
             }
-            if metrics.incrementalErrorCount > 0 {
-                row("Errors", value: "\(metrics.incrementalErrorCount)", valueColor: .red)
+            if let tail = metrics.tailAudioSeconds {
+                row("Tail after stop", value: DurationFormat.short(tail), valueColor: tailColor(tail))
+            } else {
+                row("Tail after stop", value: "—", valueColor: .secondary)
+            }
+            row("Empty chunks", value: "\(metrics.incrementalEmptyResultCount)", valueColor: .secondary)
+            row(
+                "Errors",
+                value: "\(metrics.incrementalErrorCount)",
+                valueColor: metrics.incrementalErrorCount > 0 ? .red : .secondary)
+            if let lastError = metrics.lastIncrementalError, !lastError.isEmpty {
+                row("Last error", value: shortError(lastError), valueColor: .red)
+            } else {
+                row("Last error", value: "none", valueColor: .secondary)
             }
         }
     }
@@ -1063,6 +1080,19 @@ private struct MetricsPopoverContent: View {
         case ..<0.75: return .orange
         default: return .green
         }
+    }
+
+    private func tailColor(_ seconds: Double) -> Color {
+        switch seconds {
+        case ..<8: return .green
+        case ..<15: return .orange
+        default: return .red
+        }
+    }
+
+    private func shortError(_ message: String) -> String {
+        guard message.count > 90 else { return message }
+        return String(message.prefix(87)) + "…"
     }
 }
 

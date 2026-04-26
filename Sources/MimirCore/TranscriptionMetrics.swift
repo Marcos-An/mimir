@@ -145,17 +145,20 @@ public struct SpeechTranscription: Equatable, Sendable {
 public struct LocalPipelineResult: Equatable, Sendable {
     public var transcription: SpeechTranscription
     public var outputText: String
+    public var activeIntent: PolishIntent
     public var postProcessingSeconds: TimeInterval?
     public var insertionSeconds: TimeInterval?
 
     public init(
         transcription: SpeechTranscription,
         outputText: String,
+        activeIntent: PolishIntent = .defaults,
         postProcessingSeconds: TimeInterval? = nil,
         insertionSeconds: TimeInterval? = nil
     ) {
         self.transcription = transcription
         self.outputText = outputText
+        self.activeIntent = activeIntent
         self.postProcessingSeconds = postProcessingSeconds
         self.insertionSeconds = insertionSeconds
     }

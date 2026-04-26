@@ -28,27 +28,40 @@ public actor MLXPostProcessor: TextPostProcessing {
     }
 
     public func polish(_ transcript: String) async throws -> String {
-        try await polish(transcript, onChunk: { _ in })
+        try await polish(transcript, intent: .defaults, onChunk: { _ in })
+    }
+
+    public func polish(_ transcript: String, intent: PolishIntent) async throws -> String {
+        try await polish(transcript, intent: intent, onChunk: { _ in })
     }
 
     public func polish(
         _ transcript: String,
         onChunk: @Sendable (String) async -> Void
     ) async throws -> String {
+        try await polish(transcript, intent: .defaults, onChunk: onChunk)
+    }
+
+    public func polish(
+        _ transcript: String,
+        intent: PolishIntent,
+        onChunk: @Sendable (String) async -> Void
+    ) async throws -> String {
         let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedTranscript.isEmpty else { return transcript }
 
+        let effectiveStyle = self.style
         let container = try await ensureLoaded()
         let session = ChatSession(
             container,
-            instructions: Self.systemPrompt(for: style),
+            instructions: Self.systemPrompt(for: intent, fallbackStyle: effectiveStyle),
             generateParameters: Self.makeGenerateParameters(inputCharCount: normalizedTranscript.count)
         )
 
         var accumulated = ""
         var tokensSinceLastEmit = 0
         let emitEveryNTokens = 6
-        let stream = session.streamResponse(to: Self.userPrompt(for: normalizedTranscript, style: style))
+        let stream = session.streamResponse(to: Self.userPrompt(for: normalizedTranscript, intent: intent, fallbackStyle: effectiveStyle))
         for try await chunk in stream {
             accumulated += chunk
             tokensSinceLastEmit += 1
@@ -71,7 +84,12 @@ public actor MLXPostProcessor: TextPostProcessing {
 
         let cleaned = Self.cleanOutput(accumulated)
         if cleaned.isEmpty { return transcript }
-        if Self.looksLikeForeignScript(cleaned) && !Self.looksLikeForeignScript(normalizedTranscript) {
+        // Only translation is allowed to change language; prompt/rewrite should
+        // keep the user's dictation language while shaping it into a better prompt.
+        let allowsLanguageChange = (intent == .translateToEnglish)
+        if !allowsLanguageChange,
+           Self.looksLikeForeignScript(cleaned),
+           !Self.looksLikeForeignScript(normalizedTranscript) {
             return transcript
         }
         return cleaned
@@ -132,14 +150,24 @@ public actor MLXPostProcessor: TextPostProcessing {
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func userPrompt(for transcript: String, style: PostProcessingStyle) -> String {
-        let taskLine: String = switch style {
-        case .disabled:
-            "If there is nothing to adjust, return the transcription exactly as you received it."
-        case .cleanup:
-            "Do only a conservative review of the transcription below, following the system rules."
-        case .structured:
-            "Format the dictation transcription below following the system rules."
+    static func userPrompt(for transcript: String, intent: PolishIntent, fallbackStyle: PostProcessingStyle) -> String {
+        let taskLine: String
+        switch intent {
+        case .translateToEnglish:
+            taskLine = "Translate the dictation below into clear, natural English following the system rules."
+        case .promptEngineer:
+            taskLine = "Rewrite the dictation below as a structured prompt for an LLM, following the system rules."
+        case .defaults:
+            switch fallbackStyle {
+            case .disabled:
+                taskLine = "If there is nothing to adjust, return the transcription exactly as you received it."
+            case .cleanup:
+                taskLine = "Do only a conservative review of the transcription below, following the system rules."
+            case .cleanDictation:
+                taskLine = "Clean up the dictation below into natural readable text, following the system rules."
+            case .structured:
+                taskLine = "Format the dictation transcription below following the system rules."
+            }
         }
 
         return """
@@ -151,13 +179,27 @@ public actor MLXPostProcessor: TextPostProcessing {
         """
     }
 
-    static func systemPrompt(for style: PostProcessingStyle) -> String {
-        switch style {
-        case .disabled, .cleanup:
-            return cleanupPrompt
-        case .structured:
-            return structuredPrompt
+    static func systemPrompt(for intent: PolishIntent, fallbackStyle: PostProcessingStyle) -> String {
+        switch intent {
+        case .translateToEnglish:
+            return translatePrompt
+        case .promptEngineer:
+            return promptEngineerPrompt
+        case .defaults:
+            switch fallbackStyle {
+            case .disabled, .cleanup:
+                return cleanupPrompt
+            case .cleanDictation:
+                return cleanDictationPrompt
+            case .structured:
+                return structuredPrompt
+            }
         }
+    }
+
+    /// Backwards-compatible helper used by tests. Prefer the `intent:` variant.
+    static func systemPrompt(for style: PostProcessingStyle) -> String {
+        systemPrompt(for: .defaults, fallbackStyle: style)
     }
 
     private static let cleanupPrompt = """
@@ -167,12 +209,45 @@ public actor MLXPostProcessor: TextPostProcessing {
     Fix only: spelling, diacritics, capitalization, punctuation. Remove only hesitations ("uh", "um") and obvious accidental repetitions.
     """
 
+    private static let cleanDictationPrompt = """
+    Dictation transcript editor. Output: only the final text, no quotes or comments.
+    Goal: make the dictation clean, natural, and easy to read without changing the user's meaning or voice.
+    Language: same language, same variant, same alphabet. Do not translate.
+    Preserve: intent, facts, order of ideas, names, numbers, URLs, commands, code, acronyms, and technical terms.
+    You may improve punctuation, diacritics, capitalization, agreement, sentence boundaries, and paragraph breaks when helpful.
+    You may lightly reorganize a confusing sentence only when the intended meaning is clear.
+    Remove hesitations, false starts, accidental repetitions, and pause artifacts such as repeated ellipses.
+    If a pause was transcribed as something like "... E ..." and the "E" adds no meaning, remove that pause marker.
+    Do not summarize, invent details, complete unfinished thoughts, add context, or change the argument.
+    Do not turn prose into headings, sections, or bullet lists unless the dictation clearly enumerates items.
+    If a change could alter the meaning, preserve the original wording.
+    """
+
     private static let structuredPrompt = """
     Dictation transcription formatter. Improve readability without changing content. Output: only the final text, no quotes or comments.
     Language: same as input, same variant, same alphabet. Do not translate.
     Fidelity: preserve words, facts, names, numbers, URLs, code. Do not invent, do not complete thoughts, do not summarize, do not rephrase.
     Do: spelling, diacritics, capitalization, punctuation, sentence/paragraph breaks when obvious. Bulleted lists only when the dictation clearly enumerates. Flowing text otherwise.
     Don't: headings, sections, summaries, conclusions. Do not reorganize into topics. When in doubt, minimum intervention.
+    """
+
+    private static let translatePrompt = """
+    Professional translator. Convert the dictation into clear, well-written, natural English. Output: only the final English text, no quotes, no comments, no explanations.
+    This is not a literal word-by-word translation. Read the meaning of the input and express it the way a fluent native English speaker would write it — polished prose, well-punctuated, idiomatic.
+    If the input is already in English, just correct spelling, grammar, and punctuation.
+    Preserve entities verbatim: proper nouns, personal names, numbers, dates, times, URLs, emails, identifiers, code symbols, acronyms. Do not localize them.
+    Do not invent, complete, summarize, or add content the speaker did not say. Do not add commentary.
+    """
+
+    private static let promptEngineerPrompt = """
+    Prompt engineer. The user just dictated a rambling description of what they want an LLM to do. Rewrite it as a clear, structured prompt ready to send to an LLM (Claude, GPT, Gemini, etc.). Output: only the final prompt, no quotes, no meta-commentary, no explanation of changes.
+    Language: same as the dictation input, same variant, same alphabet. Do not translate. If the dictation is in Portuguese, write the final prompt in Portuguese; if it is in English, write it in English.
+    Structure (use when it fits; do not force headings for short prompts):
+      1. Brief context — what the user is working on or the situation.
+      2. The specific task or question — phrased directly and unambiguously.
+      3. Constraints, format, or output expectations when mentioned.
+    Preserve entities verbatim: proper nouns, personal names, numbers, dates, URLs, filenames, code symbols, technical terms, acronyms.
+    Do not answer the prompt. Do not invent facts, examples, requirements, or constraints the user did not mention. Tighten verbosity; remove filler words, hesitations, and self-corrections.
     """
 
     private func ensureLoaded() async throws -> ModelContainer {

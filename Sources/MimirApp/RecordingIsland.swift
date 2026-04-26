@@ -121,7 +121,7 @@ private struct RecordingIslandView: View {
     var downloadMonitor: ModelDownloadMonitor
 
     private var isRecording: Bool { model.phase == .recording }
-    private var isHermesMode: Bool { model.activeMode == .hermes }
+    private var isPromptRewriteMode: Bool { model.activeMode == .promptRewrite }
     private var isShowingMetrics: Bool {
         model.phase == .idle && model.isFlashingMetrics && model.lastSessionMetrics != nil
     }
@@ -131,29 +131,29 @@ private struct RecordingIslandView: View {
             && (model.partialPolishText?.isEmpty == false)
     }
 
-    private var hermesAccent: Color {
-        Color(red: 0.48, green: 0.35, blue: 0.98)
+    private var promptRewriteAccent: Color {
+        Color.blue
     }
 
     private var waveTint: Color {
-        isHermesMode ? hermesAccent : .white
+        isPromptRewriteMode ? promptRewriteAccent : .white
     }
 
     private var borderColor: Color {
-        isHermesMode ? hermesAccent.opacity(0.55) : Color.white.opacity(0.08)
+        isPromptRewriteMode ? promptRewriteAccent.opacity(0.55) : Color.white.opacity(0.08)
     }
 
     private var borderWidth: CGFloat {
-        isHermesMode ? 1.4 : 1
+        isPromptRewriteMode ? 1.4 : 1
     }
 
     private var statusLabel: String {
-        let prefix = isHermesMode ? "Hermes · " : ""
+        let prefix = isPromptRewriteMode ? "Prompt · " : ""
         switch model.phase {
         case .recording: return prefix + "Recording"
         case .transcribing: return prefix + "Transcribing"
         case .postProcessing: return prefix + "Thinking"
-        case .inserting: return prefix + (isHermesMode ? "Sending" : "Inserting")
+        case .inserting: return prefix + "Inserting"
         default: return ""
         }
     }
@@ -170,15 +170,15 @@ private struct RecordingIslandView: View {
 
             if isRecording {
                 VStack(spacing: 3) {
-                    if isHermesMode {
+                    if isPromptRewriteMode {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 8, weight: .semibold))
-                            Text("Hermes")
+                            Text("Prompt")
                                 .font(.system(size: 9, weight: .semibold))
                                 .tracking(0.3)
                         }
-                        .foregroundStyle(hermesAccent)
+                        .foregroundStyle(promptRewriteAccent)
                     }
                     AudioWaveView(levels: levelMonitor.levels, tint: waveTint)
                 }
@@ -187,7 +187,7 @@ private struct RecordingIslandView: View {
                 .frame(height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(isHermesMode ? hermesAccent.opacity(0.12) : Color.white.opacity(0.08))
+                        .fill(isPromptRewriteMode ? promptRewriteAccent.opacity(0.12) : Color.white.opacity(0.08))
                 )
             } else if isShowingMetrics, let metrics = model.lastSessionMetrics {
                 MetricsFlashView(metrics: metrics)
@@ -196,12 +196,12 @@ private struct RecordingIslandView: View {
                 PolishPreviewView(text: partial)
                     .frame(maxWidth: .infinity)
             } else {
-                ProcessingProgressView(phase: model.phase, label: statusLabel, accent: isHermesMode ? hermesAccent : nil)
+                ProcessingProgressView(phase: model.phase, label: statusLabel, accent: isPromptRewriteMode ? promptRewriteAccent : nil)
                     .frame(maxWidth: .infinity)
             }
 
             if isRecording {
-                IslandButton(systemName: "checkmark", isPrimary: true, tint: isHermesMode ? hermesAccent : nil) {
+                IslandButton(systemName: "checkmark", isPrimary: true, tint: isPromptRewriteMode ? promptRewriteAccent : nil) {
                     Task { try? await model.stopDictation() }
                 }
             } else {
@@ -223,7 +223,7 @@ private struct RecordingIslandView: View {
                 .stroke(borderColor, lineWidth: borderWidth)
         )
         .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
-        .animation(.easeInOut(duration: 0.2), value: isHermesMode)
+        .animation(.easeInOut(duration: 0.2), value: isPromptRewriteMode)
     }
 }
 

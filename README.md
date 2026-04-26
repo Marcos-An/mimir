@@ -62,12 +62,13 @@ every rebuild. Useful environment variables:
 
 | Category | Options |
 |-----------|--------|
-| Trigger | Plain modifier (Right ⌘/⌥/⇧), modifier + key, hold-to-talk or tap-to-toggle |
+| Dictation trigger | Plain modifier (Right ⌘/⌥/⇧), modifier + key, hold-to-talk or tap-to-toggle. Default: tap Right ⌘ → Clean Dictation |
+| Prompt / Rewrite trigger | Separate hotkey that forces the prompt-engineering polish intent. Default: ⌥ Space |
 | Transcription | WhisperKit (Core ML) — other providers are placeholders |
 | Whisper strategy | Chunked (streaming + warmup) or Batch (whole file) |
 | Whisper model | tiny / base / small / medium / large-v3 / large-v3-turbo / **large-v3-turbo quantized (default)** |
 | Post-processing | MLX (Qwen2.5-3B) or disabled |
-| Post-processing style | Light cleanup (spelling/diacritics) or Structured (punctuation, paragraphs, lists when obvious) |
+| Post-processing style | Light cleanup (spelling/diacritics), **Clean Dictation (default — punctuation, removes filler/pauses, no restructuring)**, or Structured (punctuation, paragraphs, lists when obvious) |
 | Insertion | Clipboard + synthetic paste |
 | Preferred language | Forces Whisper to decode in a specific variant; Automatic by default |
 

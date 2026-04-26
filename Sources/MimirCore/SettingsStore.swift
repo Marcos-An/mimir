@@ -13,6 +13,7 @@ public final class SettingsStore {
 
     private let defaults: UserDefaults
     private let defaultsKey: String
+    private let cleanDictationMigrationKey = "com.mimir.migrations.cleanDictationDefault.v1"
 
     public init(defaults: UserDefaults = .standard, defaultsKey: String = "com.mimir.settings.v1") {
         self.defaults = defaults
@@ -21,7 +22,16 @@ public final class SettingsStore {
         if loaded.postProcessingProvider == .disabled {
             loaded.postProcessingProvider = .mlx
         }
+        let shouldMigrateCleanDictation = !defaults.bool(forKey: cleanDictationMigrationKey)
+            && loaded.postProcessingStyle == .structured
+        if shouldMigrateCleanDictation {
+            loaded.postProcessingStyle = .cleanDictation
+        }
         self.settings = loaded
+        if shouldMigrateCleanDictation {
+            defaults.set(true, forKey: cleanDictationMigrationKey)
+            persist()
+        }
     }
 
     public func reset() {

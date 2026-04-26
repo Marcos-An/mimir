@@ -46,6 +46,7 @@ final class MimirAppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    @MainActor
     static func presentDashboard() {
         NSApp.activate(ignoringOtherApps: true)
         if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "dashboard" || $0.title == "Mimir" }) {

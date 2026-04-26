@@ -14,10 +14,20 @@ func defaultSettingsUseRunnableLocalDefaults() {
     #expect(settings.transcriptionStrategy == .chunked)
     #expect(settings.whisperKitModel == .largeV3TurboQuantized)
     #expect(settings.postProcessingProvider == .mlx)
-    #expect(settings.postProcessingStyle == .structured)
+    #expect(settings.postProcessingStyle == .cleanDictation)
+    #expect(settings.promptRewriteActivationTrigger == .defaultRightOptionSpace)
     #expect(settings.insertionStrategy == .clipboardPaste)
     #expect(settings.shouldAutoPaste)
     #expect(settings.preferredLanguage == nil)
+}
+
+@Test("Dictation modes expose Clean Dictation and blue Prompt Rewrite behavior")
+func dictationModesExposeCleanAndPromptRewriteBehavior() {
+    #expect(DictationMode.dictation.displayName == "Clean Dictation")
+    #expect(DictationMode.dictation.defaultPolishIntent == .defaults)
+    #expect(DictationMode.promptRewrite.displayName == "Prompt / Rewrite")
+    #expect(DictationMode.promptRewrite.defaultPolishIntent == .promptEngineer)
+    #expect(DictationMode.promptRewrite.accentName == "blue")
 }
 
 @Test("Display title reflects current app state")
@@ -72,8 +82,8 @@ func holdToTalkCycleTransitionsThroughRecordingAndBackToIdle() async throws {
     #expect(await inserter.insertedTexts == ["oi mundo"])
 }
 
-@Test("Chunked sessions warm up with incremental commits and finalize from full file")
-func chunkedSessionWarmsUpAndFinalizesFromFullFile() async throws {
+@Test("Chunked sessions reuse incremental commits instead of re-transcribing full file")
+func chunkedSessionReusesIncrementalCommits() async throws {
     let finalURL = try makeTempAudioFile(named: "mimir-final", byteCount: 2048)
     let span = ChunkSpan(startSequence: 0, endSequence: 1)
     let batch = IncrementalChunkBatch(
@@ -99,19 +109,185 @@ func chunkedSessionWarmsUpAndFinalizesFromFullFile() async throws {
     try await session.handleActivationPressed()
     try? await Task.sleep(nanoseconds: 40_000_000)
 
-    // Durante a gravação, o loop incremental deve ter polled ao menos uma vez.
     #expect(await recorder.incrementalBatchCallCount > 0)
 
     try await session.handleActivationReleased()
 
     let snapshot = await session.snapshot
     #expect(snapshot.phase == .idle)
-    // Texto final vem de uma transcrição do arquivo completo (finished.fileURL).
     #expect(snapshot.lastTranscript == "oi")
     #expect(await inserter.insertedTexts == ["oi"])
-    // O arquivo final gravado é sempre visto pelo speech provider no release.
+    // Todos os chunks foram commitados no incremental — release usa o committed
+    // direto, sem chamar o speech provider com o finalURL.
     let receivedURLs = await speech.receivedAudioFileURLs
-    #expect(receivedURLs.contains(finalURL))
+    #expect(receivedURLs.contains(finalURL) == false)
+    #expect(snapshot.lastSessionMetrics?.streamingUsed == true)
+}
+
+@Test("Default incremental window commits after about five safe seconds")
+func defaultIncrementalWindowCommitsAfterFiveSafeSeconds() async throws {
+    let finalURL = try makeTempAudioFile(named: "mimir-default-window", byteCount: 2048)
+    let span = ChunkSpan(startSequence: 0, endSequence: 17)
+    let batch = IncrementalChunkBatch(
+        chunks: makeChunks(startSequence: 0, count: 18, payloadPerChunk: 16_000),
+        span: span,
+        audioFormat: AudioCaptureFormat(sampleRate: 16_000, channelCount: 1)
+    )
+    let recorder = RecorderSpy(
+        finished: FinishedCapture(fileURL: finalURL, span: span),
+        incrementalBatches: [batch]
+    )
+    let speech = SpeechSpy(results: [
+        SpeechTranscription(text: "primeiro bloco", language: "pt"),
+        SpeechTranscription(text: "cauda", language: "pt")
+    ])
+    let inserter = InserterSpy()
+    let session = DictationSessionController(
+        settings: .default,
+        recorder: recorder,
+        pipeline: LocalPipeline(speechToText: speech, postProcessor: nil, textInserter: inserter),
+        incrementalPollingIntervalNanoseconds: 10_000_000
+    )
+
+    try await session.handleActivationPressed()
+    try? await Task.sleep(nanoseconds: 40_000_000)
+    try await session.handleActivationReleased()
+
+    let snapshot = await session.snapshot
+    #expect(snapshot.lastTranscript == "primeiro bloco cauda")
+    #expect(snapshot.lastSessionMetrics?.streamingUsed == true)
+    #expect(snapshot.lastSessionMetrics?.streamingCommitCount == 1)
+}
+
+@Test("Release waits for an in-flight incremental commit instead of cancelling into no-commit fallback")
+func releaseWaitsForInFlightIncrementalCommit() async throws {
+    let finalURL = try makeTempAudioFile(named: "mimir-inflight-final", byteCount: 2048)
+    let span = ChunkSpan(startSequence: 0, endSequence: 1)
+    let batch = IncrementalChunkBatch(
+        chunks: makeChunks(startSequence: 0, count: 2, payloadPerChunk: 1000),
+        span: span,
+        audioFormat: AudioCaptureFormat(sampleRate: 16_000, channelCount: 1)
+    )
+    let recorder = RecorderSpy(
+        finished: FinishedCapture(fileURL: finalURL, span: span),
+        incrementalBatches: [batch]
+    )
+    let speech = SpeechSpy(
+        results: [SpeechTranscription(text: "commit em andamento", language: "pt")],
+        delayNanoseconds: 120_000_000
+    )
+    let inserter = InserterSpy()
+    let session = DictationSessionController(
+        settings: .default,
+        recorder: recorder,
+        pipeline: LocalPipeline(speechToText: speech, postProcessor: nil, textInserter: inserter),
+        incrementalPollingIntervalNanoseconds: 10_000_000,
+        safetyChunksAtTail: 0,
+        minimumDeltaSeconds: 0.01
+    )
+
+    try await session.handleActivationPressed()
+    try? await Task.sleep(nanoseconds: 40_000_000)
+    try await session.handleActivationReleased()
+
+    let snapshot = await session.snapshot
+    #expect(snapshot.lastTranscript == "commit em andamento")
+    #expect(snapshot.lastSessionMetrics?.streamingUsed == true)
+    #expect(snapshot.lastSessionMetrics?.streamingCommitCount == 1)
+    #expect(snapshot.lastSessionMetrics?.fallbackReason == nil)
+    let receivedURLs = await speech.receivedAudioFileURLs
+    #expect(receivedURLs.contains(finalURL) == false)
+}
+
+@Test("Release falls back to full-file transcription when no commits happened")
+func releaseFallsBackWhenNoIncrementalCommits() async throws {
+    let finalURL = try makeTempAudioFile(named: "mimir-full", byteCount: 1024)
+    let recorder = RecorderSpy(
+        finished: FinishedCapture(fileURL: finalURL, span: nil)
+    )
+    let speech = SpeechSpy(result: SpeechTranscription(text: "texto completo", language: "pt"))
+    let inserter = InserterSpy()
+    let session = DictationSessionController(
+        settings: .default,
+        recorder: recorder,
+        pipeline: LocalPipeline(speechToText: speech, postProcessor: nil, textInserter: inserter)
+    )
+
+    try await session.handleActivationPressed()
+    try await session.handleActivationReleased()
+
+    let snapshot = await session.snapshot
+    #expect(snapshot.lastTranscript == "texto completo")
+    let receivedURLs = await speech.receivedAudioFileURLs
+    #expect(receivedURLs == [finalURL])
+    #expect(snapshot.lastSessionMetrics?.streamingUsed == false)
+    #expect(snapshot.lastSessionMetrics?.fallbackReason == "no-commit")
+}
+
+@Test("Incremental empty transcript counts as empty result instead of error")
+func incrementalEmptyTranscriptCountsAsEmptyResultInsteadOfError() async throws {
+    let finalURL = try makeTempAudioFile(named: "mimir-incremental-empty", byteCount: 1024)
+    let span = ChunkSpan(startSequence: 0, endSequence: 1)
+    let batch = IncrementalChunkBatch(
+        chunks: makeChunks(startSequence: 0, count: 2, payloadPerChunk: 1000),
+        span: span,
+        audioFormat: AudioCaptureFormat(sampleRate: 16_000, channelCount: 1)
+    )
+    let recorder = RecorderSpy(
+        finished: FinishedCapture(fileURL: finalURL, span: span),
+        incrementalBatches: [batch]
+    )
+    let speech = SpeechSpy(
+        results: [SpeechTranscription(text: "texto final", language: "pt")],
+        errors: [MimirError.emptyTranscript]
+    )
+    let inserter = InserterSpy()
+    let session = DictationSessionController(
+        settings: .default,
+        recorder: recorder,
+        pipeline: LocalPipeline(speechToText: speech, postProcessor: nil, textInserter: inserter),
+        incrementalPollingIntervalNanoseconds: 10_000_000,
+        safetyChunksAtTail: 0,
+        minimumDeltaSeconds: 0.01
+    )
+
+    try await session.handleActivationPressed()
+    try? await Task.sleep(nanoseconds: 40_000_000)
+    try await session.handleActivationReleased()
+
+    let metrics = try #require(await session.snapshot.lastSessionMetrics)
+    #expect(metrics.streamingUsed == false)
+    #expect(metrics.incrementalAttemptCount == 1)
+    #expect(metrics.incrementalEmptyResultCount == 1)
+    #expect(metrics.incrementalErrorCount == 0)
+    #expect(metrics.lastIncrementalError == nil)
+    #expect(await inserter.insertedTexts == ["texto final"])
+}
+
+@Test("Empty Whisper transcript behaves like cancellation and does not insert or post-process")
+func emptyWhisperTranscriptCancelsWithoutError() async throws {
+    let finalURL = try makeTempAudioFile(named: "mimir-empty", byteCount: 256)
+    let recorder = RecorderSpy(finished: FinishedCapture(fileURL: finalURL, span: nil))
+    let speech = SpeechSpy(error: MimirError.emptyTranscript)
+    let postProcessor = PostProcessorSpy(result: "should not run")
+    let inserter = InserterSpy()
+    let session = DictationSessionController(
+        settings: .default,
+        recorder: recorder,
+        pipeline: LocalPipeline(speechToText: speech, postProcessor: postProcessor, textInserter: inserter)
+    )
+
+    try await session.handleActivationPressed()
+    try await session.handleActivationReleased()
+
+    let snapshot = await session.snapshot
+    #expect(snapshot.phase == .idle)
+    #expect(snapshot.lastTranscript == nil)
+    #expect(snapshot.lastTranscription == nil)
+    #expect(snapshot.lastSessionMetrics == nil)
+    #expect(snapshot.activeMode == nil)
+    #expect(await postProcessor.receivedTranscripts.isEmpty)
+    #expect(await inserter.insertedTexts.isEmpty)
 }
 
 @Test("Incremental pipeline materializes in-memory chunk captures without reusing recorder WAV snapshots")
@@ -205,20 +381,51 @@ func whisperKitProviderConfigurationFollowsSettings() {
     #expect(batch.language == nil)
     #expect(batch.detectLanguage)
     #expect(batch.chunkingMode == .none)
-    #expect(batch.concurrentWorkerCount == 4)
+    #expect(batch.concurrentWorkerCount == 8)
     #expect(batch.prefersWordTimestamps == false)
 }
 
-@Test("Structured MLX prompt preserves language and only formats faithful dictation")
-func structuredMLXPromptPreservesLanguageAndFormattingRules() {
-    let prompt = MLXPostProcessor.systemPrompt(for: .structured)
+@Test("Clean Dictation MLX prompt is moderately conservative and removes pause artifacts")
+func cleanDictationMLXPromptIsModeratelyConservative() {
+    let prompt = MLXPostProcessor.systemPrompt(for: .cleanDictation)
 
-    #expect(prompt.localizedCaseInsensitiveContains("language"))
+    #expect(prompt.localizedCaseInsensitiveContains("editor"))
+    #expect(prompt.localizedCaseInsensitiveContains("same language"))
     #expect(prompt.localizedCaseInsensitiveContains("do not translate"))
     #expect(prompt.localizedCaseInsensitiveContains("preserve"))
     #expect(prompt.localizedCaseInsensitiveContains("punctuation"))
-    #expect(prompt.localizedCaseInsensitiveContains("paragraph"))
-    #expect(prompt.localizedCaseInsensitiveContains("lists"))
+    #expect(prompt.localizedCaseInsensitiveContains("ellipses") || prompt.localizedCaseInsensitiveContains("reticências"))
+    #expect(prompt.localizedCaseInsensitiveContains("ultraconservative") == false)
+}
+
+@Test("Prompt Rewrite mode forces prompt-engineering intent without a spoken prefix")
+func promptRewriteModeForcesPromptEngineeringIntent() async throws {
+    let postProcessor = PostProcessorSpy(result: "Prompt limpo")
+    let inserter = InserterSpy()
+    let pipeline = LocalPipeline(
+        speechToText: SpeechSpy(result: SpeechTranscription(text: "me ajuda a revisar esse PR", language: "pt")),
+        postProcessor: postProcessor,
+        textInserter: inserter
+    )
+
+    let result = try await pipeline.process(
+        transcription: SpeechTranscription(text: "me ajuda a revisar esse PR", language: "pt"),
+        defaultIntent: .promptEngineer
+    )
+
+    #expect(result.activeIntent == .promptEngineer)
+    #expect(await postProcessor.receivedIntents == [.promptEngineer])
+    #expect(await postProcessor.receivedTranscripts == ["me ajuda a revisar esse PR"])
+    #expect(await inserter.insertedTexts == ["Prompt limpo"])
+}
+
+@Test("Prompt Rewrite MLX prompt preserves the dictation language instead of forcing English")
+func promptRewriteMLXPromptPreservesDictationLanguage() {
+    let prompt = MLXPostProcessor.systemPrompt(for: .promptEngineer, fallbackStyle: .cleanDictation)
+
+    #expect(prompt.localizedCaseInsensitiveContains("same as the dictation input"))
+    #expect(prompt.localizedCaseInsensitiveContains("do not translate"))
+    #expect(prompt.localizedCaseInsensitiveContains("always write the final prompt in English") == false)
 }
 
 @Test("Cleanup MLX prompt stays conservative and avoids structural rewrites")
@@ -328,27 +535,147 @@ private actor RecorderSpy: AudioRecording {
 
 private actor SpeechSpy: SpeechToTextProviding {
     var remainingResults: [SpeechTranscription]
+    var remainingErrors: [Error]
+    let delayNanoseconds: UInt64
     var receivedAudioFileURL: URL?
     var receivedAudioFileURLs: [URL] = []
     var receivedLanguageHint: String?
 
-    init(result: SpeechTranscription) {
+    init(result: SpeechTranscription, delayNanoseconds: UInt64 = 0) {
         self.remainingResults = [result]
+        self.remainingErrors = []
+        self.delayNanoseconds = delayNanoseconds
     }
 
-    init(results: [SpeechTranscription]) {
+    init(results: [SpeechTranscription], delayNanoseconds: UInt64 = 0) {
         self.remainingResults = results
+        self.remainingErrors = []
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    init(results: [SpeechTranscription], errors: [Error], delayNanoseconds: UInt64 = 0) {
+        self.remainingResults = results
+        self.remainingErrors = errors
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    init(error: Error, delayNanoseconds: UInt64 = 0) {
+        self.remainingResults = []
+        self.remainingErrors = [error]
+        self.delayNanoseconds = delayNanoseconds
     }
 
     func transcribe(audioFileURL: URL, languageHint: String?) async throws -> SpeechTranscription {
         receivedAudioFileURL = audioFileURL
         receivedAudioFileURLs.append(audioFileURL)
         receivedLanguageHint = languageHint
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if !remainingErrors.isEmpty {
+            throw remainingErrors.removeFirst()
+        }
         if remainingResults.count > 1 {
             return remainingResults.removeFirst()
         }
         return remainingResults.first ?? SpeechTranscription(text: "")
     }
+}
+
+@MainActor
+@Test("SettingsStore migrates legacy structured default to Clean Dictation and persists marker")
+func settingsStoreMigratesLegacyStructuredDefaultToCleanDictation() throws {
+    let suiteName = "com.mimir.tests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let migrationKey = "com.mimir.migrations.cleanDictationDefault.v1"
+    let defaultsKey = "com.mimir.tests.settings"
+
+    let legacyJSON = """
+    {
+      "activationMode": "tapToToggle",
+      "activationTrigger": {"keyCode": 54, "modifiers": 0, "label": "Right ⌘"},
+      "promptRewriteActivationTrigger": {"keyCode": 49, "modifiers": 524288, "label": "⌥ Space"},
+      "transcriptionProvider": "whisperKit",
+      "transcriptionStrategy": "chunked",
+      "whisperKitModel": "largeV3TurboQuantized",
+      "postProcessingProvider": "mlx",
+      "postProcessingStyle": "structured",
+      "insertionStrategy": "clipboardPaste",
+      "shouldAutoPaste": true
+    }
+    """
+    defaults.set(Data(legacyJSON.utf8), forKey: defaultsKey)
+    #expect(defaults.bool(forKey: migrationKey) == false)
+
+    let store = SettingsStore(defaults: defaults, defaultsKey: defaultsKey)
+
+    #expect(store.settings.postProcessingStyle == .cleanDictation)
+    #expect(defaults.bool(forKey: migrationKey))
+
+    let persistedData = try #require(defaults.data(forKey: defaultsKey))
+    let persisted = try JSONDecoder().decode(AppSettings.self, from: persistedData)
+    #expect(persisted.postProcessingStyle == .cleanDictation)
+}
+
+@MainActor
+@Test("SettingsStore preserves structured when migration marker is already set")
+func settingsStorePreservesStructuredWhenMigrationMarkerSet() throws {
+    let suiteName = "com.mimir.tests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let migrationKey = "com.mimir.migrations.cleanDictationDefault.v1"
+    let defaultsKey = "com.mimir.tests.settings"
+    defaults.set(true, forKey: migrationKey)
+
+    let json = """
+    {
+      "activationMode": "tapToToggle",
+      "activationTrigger": {"keyCode": 54, "modifiers": 0, "label": "Right ⌘"},
+      "promptRewriteActivationTrigger": {"keyCode": 49, "modifiers": 524288, "label": "⌥ Space"},
+      "transcriptionProvider": "whisperKit",
+      "transcriptionStrategy": "chunked",
+      "whisperKitModel": "largeV3TurboQuantized",
+      "postProcessingProvider": "mlx",
+      "postProcessingStyle": "structured",
+      "insertionStrategy": "clipboardPaste",
+      "shouldAutoPaste": true
+    }
+    """
+    defaults.set(Data(json.utf8), forKey: defaultsKey)
+
+    let store = SettingsStore(defaults: defaults, defaultsKey: defaultsKey)
+
+    #expect(store.settings.postProcessingStyle == .structured)
+}
+
+@Test("Default AppSettings encoding uses promptRewriteActivationTrigger")
+func defaultAppSettingsEncodingUsesPromptRewriteKey() throws {
+    let data = try JSONEncoder().encode(AppSettings.default)
+    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+    #expect(json.keys.contains("promptRewriteActivationTrigger"))
+}
+
+@Test("Decoding a legacy hermesActivationTrigger payload populates promptRewriteActivationTrigger")
+func decodingLegacyHermesActivationTriggerPopulatesPromptRewrite() throws {
+    let legacyJSON = """
+    {
+      "activationMode": "tapToToggle",
+      "activationTrigger": {"keyCode": 54, "modifiers": 0, "label": "Right ⌘"},
+      "hermesActivationTrigger": {"keyCode": 36, "modifiers": 1048576, "label": "⌘ Return"},
+      "transcriptionProvider": "whisperKit",
+      "postProcessingProvider": "mlx",
+      "insertionStrategy": "clipboardPaste",
+      "shouldAutoPaste": true
+    }
+    """
+
+    let settings = try JSONDecoder().decode(AppSettings.self, from: Data(legacyJSON.utf8))
+
+    #expect(settings.promptRewriteActivationTrigger.keyCode == 36)
+    #expect(settings.promptRewriteActivationTrigger.modifiers == 1 << 20)
+    #expect(settings.promptRewriteActivationTrigger.label == "⌘ Return")
 }
 
 @MainActor
@@ -407,6 +734,36 @@ private actor InserterSpy: TextInserting {
 
     func insert(_ text: String) async throws {
         insertedTexts.append(text)
+    }
+}
+
+private actor PostProcessorSpy: TextPostProcessing {
+    let result: String
+    var receivedTranscripts: [String] = []
+    var receivedIntents: [PolishIntent] = []
+
+    init(result: String) {
+        self.result = result
+    }
+
+    func polish(_ transcript: String) async throws -> String {
+        try await polish(transcript, intent: .defaults)
+    }
+
+    func polish(_ transcript: String, intent: PolishIntent) async throws -> String {
+        receivedTranscripts.append(transcript)
+        receivedIntents.append(intent)
+        return result
+    }
+
+    func polish(
+        _ transcript: String,
+        intent: PolishIntent,
+        onChunk: @Sendable (String) async -> Void
+    ) async throws -> String {
+        let output = try await polish(transcript, intent: intent)
+        await onChunk(output)
+        return output
     }
 }
 

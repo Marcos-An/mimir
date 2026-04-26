@@ -30,10 +30,45 @@ public struct DictationSnapshot: Equatable, Sendable {
 }
 
 public enum DictationMode: String, Codable, Equatable, Sendable {
-    /// Texto final colado no app ativo (padrão).
+    /// Texto final limpo e colado no app ativo (padrão).
     case dictation
-    /// Texto final enviado para a ilha do Hermes no mbar via socket.
+    /// Reescreve a fala como prompt/texto estruturado e cola no app ativo.
+    case promptRewrite
+    /// Envia o texto final para a ilha do Hermes em vez de colar no app ativo.
     case hermes
+
+    public var displayName: String {
+        switch self {
+        case .dictation:
+            "Clean Dictation"
+        case .promptRewrite:
+            "Prompt / Rewrite"
+        case .hermes:
+            "Hermes handoff"
+        }
+    }
+
+    public var defaultPolishIntent: PolishIntent {
+        switch self {
+        case .dictation:
+            .defaults
+        case .promptRewrite:
+            .promptEngineer
+        case .hermes:
+            .defaults
+        }
+    }
+
+    public var accentName: String {
+        switch self {
+        case .dictation:
+            "green"
+        case .promptRewrite:
+            "blue"
+        case .hermes:
+            "purple"
+        }
+    }
 }
 
 public actor DictationSessionController {
@@ -55,6 +90,8 @@ public actor DictationSessionController {
     private var accumulatedChunks: [AudioChunk] = []
     private var accumulatedFormat: AudioCaptureFormat?
     private var currentMode: DictationMode = .dictation
+    private var incrementalStopRequested = false
+    private var incrementalTranscriptionInFlight = false
     // Telemetria por sessão (zerada em resetIncrementalState).
     private var commitCount: Int = 0
     private var commitCumulativeSeconds: TimeInterval = 0
@@ -72,7 +109,7 @@ public actor DictationSessionController {
         hermesInserter: (any TextInserting)? = nil,
         incrementalPollingIntervalNanoseconds: UInt64 = 700_000_000,
         safetyChunksAtTail: Int = 8,
-        minimumDeltaSeconds: Double = 1.0
+        minimumDeltaSeconds: Double = 5.0
     ) {
         self.settings = settings
         self.recorder = recorder
@@ -131,23 +168,93 @@ public actor DictationSessionController {
     }
 
     public func handleActivationReleased() async throws {
-        incrementalTask?.cancel()
-        incrementalTask = nil
+        await stopIncrementalTaskForRelease()
         let pipelineToUse = pipelineForCurrentMode()
         do {
             let finished = try await recorder.finishCapture()
             currentSnapshot.phase = .transcribing
 
             let transcriptionStart = Date()
-            // Transcreve o arquivo completo no release — preserva contexto
-            // completo do áudio e garante qualidade. Os commits incrementais
-            // seguem rodando durante a gravação só pra telemetria/cobertura;
-            // o texto final é sempre autoritativo do full-file.
-            let streamingUsed = assembler.committedTranscription != nil
-            let fallbackReason: String? = streamingUsed ? nil : "no-commit"
+
+            // Se o loop incremental commitou algo durante a gravação, reaproveita
+            // esse texto e transcreve apenas a cauda não-commitada. Com deltas
+            // grandes (~5s+) cada commit tem contexto suficiente pra ficar
+            // lexicamente estável — compromisso viável entre velocidade e
+            // fidelidade do full-file.
+            let sampleRate = accumulatedFormat?.sampleRate ?? 16_000
+            let allChunks = accumulatedChunks + finished.trailingChunks
+            let totalFrames = allChunks.reduce(0) { $0 + $1.frameCount }
+            let totalAudioSeconds = Double(totalFrames) / sampleRate
+
+            let finalTranscription: SpeechTranscription
+            var tailAudioSeconds: TimeInterval
+            let streamingUsed: Bool
+            var fallbackReason: String?
+
+            if let committed = assembler.committedTranscription,
+               let committedEnd = assembler.committedSpan?.endSequence,
+               let format = accumulatedFormat,
+               !committed.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let tailChunks = allChunks.filter { $0.id.sequence > committedEnd }
+                let tailFrames = tailChunks.reduce(0) { $0 + $1.frameCount }
+                tailAudioSeconds = Double(tailFrames) / sampleRate
+                streamingUsed = true
+
+                if tailChunks.isEmpty {
+                    finalTranscription = committed
+                } else {
+                    let tailStart = tailChunks.first!.id.sequence
+                    let tailEnd = tailChunks.last!.id.sequence
+                    let tailCapture = IncrementalAudioCapture(audioFormat: format, chunks: tailChunks)
+                        .paddedWithTrailingSilence(seconds: 0.3)
+                    let artifact = IncrementalCaptureArtifact(
+                        audioCapture: tailCapture,
+                        span: ChunkSpan(startSequence: tailStart, endSequence: tailEnd)
+                    )
+                    do {
+                        let tailTranscription = try await pipelineToUse.transcribeIncrementalArtifact(
+                            artifact,
+                            languageHint: settings.preferredLanguage,
+                            onPhase: { [weak self] phase in
+                                await self?.setPhase(phase)
+                            }
+                        )
+                        let committedText = committed.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let tailText = tailTranscription.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let combined = tailText.isEmpty ? committedText : committedText + " " + tailText
+                        finalTranscription = SpeechTranscription(
+                            text: combined,
+                            language: tailTranscription.language ?? committed.language,
+                            metrics: tailTranscription.metrics
+                        )
+                    } catch {
+                        fallbackReason = "tail-failure"
+                        finalTranscription = try await pipelineToUse.transcribeAudio(
+                            audioFileURL: finished.fileURL,
+                            languageHint: settings.preferredLanguage,
+                            onPhase: { [weak self] phase in
+                                await self?.setPhase(phase)
+                            }
+                        )
+                        tailAudioSeconds = totalAudioSeconds
+                    }
+                }
+            } else {
+                streamingUsed = false
+                fallbackReason = "no-commit"
+                tailAudioSeconds = totalAudioSeconds
+                finalTranscription = try await pipelineToUse.transcribeAudio(
+                    audioFileURL: finished.fileURL,
+                    languageHint: settings.preferredLanguage,
+                    onPhase: { [weak self] phase in
+                        await self?.setPhase(phase)
+                    }
+                )
+            }
+
             let result = try await pipelineToUse.process(
-                audioFileURL: finished.fileURL,
-                languageHint: settings.preferredLanguage,
+                transcription: finalTranscription,
+                defaultIntent: currentMode.defaultPolishIntent,
                 onPhase: { [weak self] phase in
                     await self?.setPhase(phase)
                 },
@@ -164,17 +271,10 @@ public actor DictationSessionController {
             let insertSec = result.insertionSeconds ?? 0
             let transcriptionSeconds = max(0, totalSinceStop - postSec - insertSec)
 
-            // Cobertura do streaming / tail.
-            let sampleRate = accumulatedFormat?.sampleRate ?? 16_000
-            let totalFrames = (accumulatedChunks + finished.trailingChunks).reduce(0) { $0 + $1.frameCount }
-            let totalAudioSeconds = Double(totalFrames) / sampleRate
             let committedSeconds: TimeInterval? = streamingUsed
                 ? Double(committedFrameCount) / sampleRate
                 : nil
-            // Obs.: como o release sempre transcreve o arquivo inteiro agora,
-            // "tail transcrito" é sempre = totalAudioSeconds. Committed é só
-            // sinal de saúde do streaming durante gravação.
-            let tailSeconds: TimeInterval = totalAudioSeconds
+            let tailSeconds: TimeInterval = tailAudioSeconds
 
             let sessionMetrics = SessionMetrics(
                 audioSeconds: nil, // preenchido pelo MimirAppModel com o tempo de gravação real.
@@ -203,6 +303,14 @@ public actor DictationSessionController {
             currentSnapshot.partialPolishText = nil
             currentSnapshot.activeMode = nil
             resetIncrementalState()
+        } catch MimirError.emptyTranscript {
+            resetIncrementalState()
+            currentSnapshot.phase = .idle
+            currentSnapshot.lastTranscript = nil
+            currentSnapshot.lastTranscription = nil
+            currentSnapshot.lastSessionMetrics = nil
+            currentSnapshot.partialPolishText = nil
+            currentSnapshot.activeMode = nil
         } catch {
             resetIncrementalState()
             currentSnapshot.activeMode = nil
@@ -210,8 +318,8 @@ public actor DictationSessionController {
         }
     }
 
-/// Seleciona o pipeline efetivo para o modo da sessão atual. Para modo
-    /// Hermes substitui o inserter se configurado.
+    /// Seleciona o pipeline efetivo para o modo da sessão atual.
+    /// Prompt/Rewrite mantém o paste normal; Hermes handoff troca o destino.
     private func pipelineForCurrentMode() -> LocalPipeline {
         guard currentMode == .hermes, let hermesInserter else {
             return pipeline
@@ -239,6 +347,8 @@ public actor DictationSessionController {
         assembler.reset()
         accumulatedChunks.removeAll(keepingCapacity: false)
         accumulatedFormat = nil
+        incrementalStopRequested = false
+        incrementalTranscriptionInFlight = false
         commitCount = 0
         commitCumulativeSeconds = 0
         committedFrameCount = 0
@@ -255,7 +365,9 @@ public actor DictationSessionController {
                 do {
                     try await Task.sleep(nanoseconds: interval)
                     if Task.isCancelled { break }
+                    if shouldStopIncrementalLoop() { break }
                     await self.captureIncrementalTranscription()
+                    if shouldStopIncrementalLoop() { break }
                 } catch is CancellationError {
                     break
                 } catch {
@@ -263,6 +375,21 @@ public actor DictationSessionController {
                 }
             }
         }
+    }
+
+    private func shouldStopIncrementalLoop() -> Bool {
+        incrementalStopRequested
+    }
+
+    private func stopIncrementalTaskForRelease() async {
+        guard let task = incrementalTask else { return }
+        incrementalStopRequested = true
+        if incrementalTranscriptionInFlight {
+            await task.value
+        } else {
+            task.cancel()
+        }
+        incrementalTask = nil
     }
 
     private func captureIncrementalTranscription() async {
@@ -316,6 +443,8 @@ public actor DictationSessionController {
 
         incrementalAttemptCount += 1
         let commitStart = Date()
+        incrementalTranscriptionInFlight = true
+        defer { incrementalTranscriptionInFlight = false }
         do {
             let transcription = try await pipeline.transcribeIncrementalArtifact(
                 artifact,
@@ -342,6 +471,8 @@ public actor DictationSessionController {
                     metrics: transcription.metrics
                 )
             )
+        } catch MimirError.emptyTranscript {
+            incrementalEmptyResultCount += 1
         } catch {
             incrementalErrorCount += 1
             lastIncrementalError = error.localizedDescription

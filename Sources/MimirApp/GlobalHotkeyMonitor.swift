@@ -35,12 +35,14 @@ final class GlobalHotkeyMonitor {
 
     init(
         dictationTrigger: KeyBinding,
+        promptRewriteTrigger: KeyBinding,
         hermesTrigger: KeyBinding,
         mode: ActivationMode,
         model: MimirAppModel
     ) {
         self.triggers = [
             TriggerSpec(binding: dictationTrigger, mode: .dictation),
+            TriggerSpec(binding: promptRewriteTrigger, mode: .promptRewrite),
             TriggerSpec(binding: hermesTrigger, mode: .hermes)
         ]
         self.mode = mode
@@ -74,6 +76,10 @@ final class GlobalHotkeyMonitor {
 
     func updateDictationTrigger(_ newTrigger: KeyBinding) {
         updateActivationTrigger(newTrigger, atMode: .dictation)
+    }
+
+    func updatePromptRewriteTrigger(_ newTrigger: KeyBinding) {
+        updateActivationTrigger(newTrigger, atMode: .promptRewrite)
     }
 
     func updateHermesTrigger(_ newTrigger: KeyBinding) {
@@ -157,9 +163,7 @@ final class GlobalHotkeyMonitor {
                 await applyTriggerState(spec, pressed: pressed)
                 if pressed { return }
             } else if binding.isModifierCombo {
-                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue
-                let expected = binding.modifiers & NSEvent.ModifierFlags.deviceIndependentFlagsMask.rawValue
-                let pressed = (flags == expected)
+                let pressed = binding.matchesModifierFlags(rawFlags: event.modifierFlags.rawValue)
                 await applyTriggerState(spec, pressed: pressed)
                 if pressed { return }
             }
