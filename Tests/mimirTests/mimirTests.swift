@@ -124,12 +124,14 @@ func chunkedSessionReusesIncrementalCommits() async throws {
     #expect(snapshot.lastSessionMetrics?.streamingUsed == true)
 }
 
-@Test("Default incremental window commits after about five safe seconds")
-func defaultIncrementalWindowCommitsAfterFiveSafeSeconds() async throws {
+@Test("Default incremental window commits after about four safe seconds")
+func defaultIncrementalWindowCommitsAfterFourSafeSeconds() async throws {
     let finalURL = try makeTempAudioFile(named: "mimir-default-window", byteCount: 2048)
     let span = ChunkSpan(startSequence: 0, endSequence: 17)
     let batch = IncrementalChunkBatch(
-        chunks: makeChunks(startSequence: 0, count: 18, payloadPerChunk: 16_000),
+        // With the default 8 safety chunks, the first 10 chunks are safe.
+        // 10 * 6,720 frames at 16 kHz ~= 4.2 seconds of transcribable audio.
+        chunks: makeChunks(startSequence: 0, count: 18, payloadPerChunk: 13_440),
         span: span,
         audioFormat: AudioCaptureFormat(sampleRate: 16_000, channelCount: 1)
     )

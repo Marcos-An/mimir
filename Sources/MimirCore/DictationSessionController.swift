@@ -109,7 +109,7 @@ public actor DictationSessionController {
         hermesInserter: (any TextInserting)? = nil,
         incrementalPollingIntervalNanoseconds: UInt64 = 700_000_000,
         safetyChunksAtTail: Int = 8,
-        minimumDeltaSeconds: Double = 5.0
+        minimumDeltaSeconds: Double = 4.0
     ) {
         self.settings = settings
         self.recorder = recorder
@@ -178,7 +178,7 @@ public actor DictationSessionController {
 
             // Se o loop incremental commitou algo durante a gravação, reaproveita
             // esse texto e transcreve apenas a cauda não-commitada. Com deltas
-            // grandes (~5s+) cada commit tem contexto suficiente pra ficar
+            // grandes (~4s+) cada commit tem contexto suficiente pra ficar
             // lexicamente estável — compromisso viável entre velocidade e
             // fidelidade do full-file.
             let sampleRate = accumulatedFormat?.sampleRate ?? 16_000
