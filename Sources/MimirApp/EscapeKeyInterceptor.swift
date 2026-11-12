@@ -1,4 +1,5 @@
 import AppKit
+import os.log
 
 /// Swallows Esc while Mimir is recording, so cancelling a dictation doesn't
 /// also reach the app in front (where Esc would, say, stop an AI chat that is
@@ -11,6 +12,7 @@ import AppKit
 @MainActor
 final class EscapeKeyInterceptor {
     private static let escapeKeyCode: Int64 = 53
+    private static let logger = Logger(subsystem: "dev.mimir.app", category: "EscapeKey")
 
     private var tap: CFMachPort?
     private var swallowedKeyDown = false
@@ -64,6 +66,7 @@ final class EscapeKeyInterceptor {
     private func shouldSwallow(type: CGEventType, event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            Self.logger.notice("Esc tap disabled by the system (\(type == .tapDisabledByTimeout ? "timeout" : "user input", privacy: .public)); re-enabling")
             if isEnabled, let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return false
         case .keyDown:

@@ -18,6 +18,7 @@ final class RecordingIslandController {
     private let levelMonitor: AudioLevelMonitor
     private let downloadMonitor: ModelDownloadMonitor
     private let presentation = IslandPresentation()
+    private let secureInput = SecureInputMonitor()
     private var pendingOrderOut: DispatchWorkItem?
 
     init(
@@ -47,6 +48,7 @@ final class RecordingIslandController {
     }
 
     private func syncVisibility() {
+        secureInput.setWatching(model.phase == .recording)
         if downloadMonitor.isActive {
             hide()
             return
@@ -74,7 +76,8 @@ final class RecordingIslandController {
                 rootView: RecordingIslandView(
                     model: model,
                     levelMonitor: levelMonitor,
-                    presentation: presentation
+                    presentation: presentation,
+                    secureInput: secureInput
                 )
             )
             let panel = NSPanel(
@@ -157,6 +160,7 @@ private struct RecordingIslandView: View {
     @Bindable var model: MimirAppModel
     var levelMonitor: AudioLevelMonitor
     var presentation: IslandPresentation
+    var secureInput: SecureInputMonitor
 
     @State private var hovering = false
     @State private var recordingStart = Date()
@@ -166,11 +170,13 @@ private struct RecordingIslandView: View {
     private var isShowingMetrics: Bool {
         model.phase == .idle && model.isFlashingMetrics && model.lastSessionMetrics != nil
     }
-    private var showsButtons: Bool { isRecording && hovering }
+    /// Another app holds Secure Input: Esc can't reach Mimir, so ✕ stays out.
+    private var escBlockedBy: String? { isRecording ? secureInput.blockingAppName : nil }
+    private var showsButtons: Bool { isRecording && (hovering || escBlockedBy != nil) }
 
     /// Changes whenever the pill's content changes shape, to animate its width.
     private var layoutKey: String {
-        "\(model.phase)-\(isPrompt)-\(showsButtons)-\(model.sessionNotice != nil)-\(isShowingMetrics)"
+        "\(model.phase)-\(isPrompt)-\(showsButtons)-\(model.sessionNotice != nil)-\(isShowingMetrics)-\(escBlockedBy ?? "")"
     }
 
     private var statusLabel: String {
@@ -237,6 +243,9 @@ private struct RecordingIslandView: View {
                         tint: isPrompt ? IslandStyle.lilac : .white.opacity(0.92)
                     )
                     ElapsedTimer(since: recordingStart)
+                    if let app = escBlockedBy {
+                        EscBlockedLabel(appName: app)
+                    }
                 }
                 .padding(.horizontal, showsButtons ? 10 : 0)
                 .zIndex(1)
@@ -261,6 +270,27 @@ private struct RecordingIslandView: View {
             )
             .transition(.opacity)
         }
+    }
+}
+
+/// Shown while another app holds Secure Input and Esc can't be seen.
+private struct EscBlockedLabel: View {
+    let appName: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text("Esc blocked by \(appName)")
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(Color.orange.opacity(0.9))
+        .frame(maxWidth: 150)
+        .fixedSize(horizontal: false, vertical: true)
+        .help("\(appName) has macOS Secure Input on, so no app can see Esc. Click ✕ to cancel, or click another field in \(appName).")
+        .accessibilityLabel("Esc is blocked by \(appName). Use the cancel button.")
     }
 }
 

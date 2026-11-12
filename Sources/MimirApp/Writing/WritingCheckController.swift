@@ -75,6 +75,16 @@ final class WritingCheckController {
     private var applyFailedUntil: Date = .distantPast
     /// Mimir's own dictation paste: changes in this window are never sent.
     private var quietUntil: Date = .distantPast
+
+    /// No reads while Mimir records, transcribes or pastes, and for 2 s after.
+    /// Accessibility calls run on the main thread; during a recording they
+    /// can delay the Esc tap enough for macOS to disable it.
+    private var isQuiet: Bool {
+        switch model.phase {
+        case .recording, .transcribing, .postProcessing, .inserting: return true
+        default: return Date() < quietUntil
+        }
+    }
     /// After a dictation, the field's text is marked as checked on the first
     /// read once the quiet window ends (nothing is read during it).
     private var pendingSeed = false
@@ -223,7 +233,7 @@ final class WritingCheckController {
 
     /// Re-reads the focused field and decides what to check.
     func refresh() {
-        guard isActive, Date() >= quietUntil else { return }
+        guard isActive, !isQuiet else { return }
         guard let current = FocusedTextReader.focusedField(policy: policy) else {
             if field != nil {
                 logger.notice("No readable field (frontmost: \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?", privacy: .public))")
@@ -274,7 +284,7 @@ final class WritingCheckController {
             MainActor.assumeIsolated {
                 guard let self, self.isActive,
                       let current = FocusedTextReader.focusedField(policy: self.policy),
-                      Date() >= self.quietUntil else { return }
+                      !self.isQuiet else { return }
                 self.field = current
                 let sentences = self.scheduler.idleFired(current.text)
                 // Dropped (busy, no key, budget): let a later idle try it again.
@@ -407,7 +417,7 @@ final class WritingCheckController {
     /// per 100 ms, and only when there is something drawn. Scrolling fires
     /// ~60 events a second; each placement asks the app for word positions.
     private func layoutChanged() {
-        guard isActive, Date() >= quietUntil, field != nil else { return }
+        guard isActive, !isQuiet, field != nil else { return }
         closePopup()
         guard !anchoredFindings.isEmpty else { return }
         rectCache = [:]
@@ -416,7 +426,7 @@ final class WritingCheckController {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.layoutWork = nil
-                guard self.isActive, Date() >= self.quietUntil else { return }
+                guard self.isActive, !self.isQuiet else { return }
                 self.rectCache = [:]
                 self.render()
             }

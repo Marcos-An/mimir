@@ -179,9 +179,11 @@ final class GlobalHotkeyMonitor {
         if isPaused { return }
         guard event.keyCode == 53 else { return }
         guard model.phase == .recording else { return }
-        // The event tap already cancelled on this keypress.
+        // The event tap already cancelled on this keypress. Don't skip just
+        // because the tap is enabled: when the main thread is busy, macOS
+        // disables the tap for a moment and that Esc reaches only this monitor.
         if let interceptor = escapeInterceptor,
-           interceptor.isEnabled || abs(interceptor.lastHandledTimestamp - event.timestamp) < 0.05 {
+           abs(interceptor.lastHandledTimestamp - event.timestamp) < 0.05 {
             return
         }
         try? await model.cancelDictation()

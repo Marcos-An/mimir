@@ -41,7 +41,9 @@ enum FocusedTextReader {
         // text fields at all, so a password field can't be told apart. It
         // exposes structure only; the secure-field check below still blocks
         // reading any text.
-        enableElectronAccessibility(appElement, pid: app.processIdentifier, bundleID: bundleID)
+        if isElectronApp(app) {
+            enableElectronAccessibility(appElement, pid: app.processIdentifier, bundleID: bundleID)
+        }
 
         guard let focused = copyElement(appElement, kAXFocusedUIElementAttribute) else { return nil }
         AXUIElementSetMessagingTimeout(focused, messagingTimeout)
@@ -71,6 +73,20 @@ enum FocusedTextReader {
         if AXUIElementSetAttributeValue(app, attribute, kCFBooleanTrue) == .success {
             electronEnabled[pid] = bundleID
         }
+    }
+
+    /// Only real Electron apps (Slack, Claude) get the switch. Browsers like
+    /// Dia or Chrome also answer to it, and forcing their full accessibility
+    /// tree changes how they behave; they are read without it.
+    private static var electronByBundle: [String: Bool] = [:]
+
+    private static func isElectronApp(_ app: NSRunningApplication) -> Bool {
+        guard let bundleID = app.bundleIdentifier, let url = app.bundleURL else { return false }
+        if let known = electronByBundle[bundleID] { return known }
+        let framework = url.appendingPathComponent("Contents/Frameworks/Electron Framework.framework")
+        let isElectron = FileManager.default.fileExists(atPath: framework.path)
+        electronByBundle[bundleID] = isElectron
+        return isElectron
     }
 
     /// Apps where Mimir turned the Electron switch on (it was off before).
