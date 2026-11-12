@@ -46,6 +46,14 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .executableTarget(
+            name: "MimirEval",
+            dependencies: ["MimirCore"]
+        ),
+        .testTarget(
+            name: "MimirUITests",
+            dependencies: ["MimirApp"]
+        ),
         .testTarget(
             name: "mimirTests",
             dependencies: ["MimirCore"]

@@ -8,6 +8,7 @@ set -euo pipefail
 #   MIMIR_BUNDLE_ID   — override do CFBundleIdentifier (default: "dev.mimir.app")
 #   MIMIR_OUTPUT_DIR  — diretório de saída do .app (default: "<repo>/dist")
 #   MIMIR_SKIP_CODESIGN=1 — pula a assinatura (útil para CI/desenvolvimento)
+#   MIMIR_VERSION / MIMIR_BUILD — versão exibida e número de build (default: 0.1.0 / 1)
 #
 # Saída: "<MIMIR_OUTPUT_DIR>/Mimir.app"
 # -----------------------------------------------------------------------------
@@ -25,7 +26,11 @@ if [ "${MIMIR_SKIP_CODESIGN:-0}" != "1" ]; then
     bash "$ROOT/scripts/setup_codesign.sh"
 fi
 
-swift build -c release --product MimirApp --package-path "$ROOT" >/tmp/mimir-swift-build.log
+if ! swift build -c release --product MimirApp --package-path "$ROOT" >/tmp/mimir-swift-build.log 2>&1; then
+    echo "swift build failed. Last lines of /tmp/mimir-swift-build.log:" >&2
+    grep -E "error:" /tmp/mimir-swift-build.log | head -20 >&2 || tail -20 /tmp/mimir-swift-build.log >&2
+    exit 1
+fi
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -81,9 +86,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${MIMIR_VERSION:-0.1.0}</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${MIMIR_BUILD:-1}</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key>

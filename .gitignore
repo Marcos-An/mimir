@@ -26,3 +26,9 @@ DerivedData/
 # Ferramentas locais de desenvolvimento (Claude Code, etc.)
 /.claude/
 
+
+# Release builds (scripts/package_release.sh)
+/release
+
+# Local design-tool workspace
+/.impeccable/
