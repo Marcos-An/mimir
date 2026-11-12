@@ -46,7 +46,26 @@ jobs:
   # The Windows app: unit tests, the NSIS installer, and a self-test that
   # downloads the base model and transcribes the bundled clip. On a tag
   # desktop-v* or by hand, the installer goes to a prerelease for testers.
+  # Whether the Windows app needs a build: a Swift-only change under
+  # Sources/MimirCore runs the shared checks above, not a full installer build.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - "desktop/**"
+              - "shared/**"
+              - ".github/workflows/desktop.yml"
+
   windows-app:
+    needs: changes
+    if: needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/desktop-v')
     runs-on: windows-latest
     permissions:
       contents: write
@@ -69,7 +88,11 @@ jobs:
         working-directory: desktop/app
         run: cargo tauri build
       - name: Self-test (download base model, transcribe the clip)
-        run: ./target/release/mimir.exe --self-test base
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ./target/release/mimir.exe -ArgumentList '--self-test','base' -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest.out -RedirectStandardError selftest.err
+          Get-Content selftest.out, selftest.err
+          exit $p.ExitCode
       - name: Publish for testers
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/desktop-v')
         uses: softprops/action-gh-release@v2

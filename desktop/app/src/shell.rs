@@ -37,10 +37,44 @@ pub fn phase_changed(app: &AppHandle, phase: Phase) {
         let _ = tray.set_icon(Some(icon(phase == Phase::Recording)));
         let _ = tray.set_tooltip(Some(format!("Mimir: {}", phase.title())));
     }
-    // Esc cancels, but only while recording: outside that it belongs to other apps.
+    watch_escape(app, phase == Phase::Recording);
+}
+
+/// Esc cancels, but only while recording: outside that it belongs to other
+/// apps. On Windows the key is read directly, because a hotkey for Esc does
+/// not fire while the dictation shortcut's Ctrl/Shift are still held (hold
+/// mode), and Ctrl+Shift+Esc would open Task Manager instead.
+#[cfg(windows)]
+fn watch_escape(app: &AppHandle, recording: bool) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+    static WATCHING: AtomicBool = AtomicBool::new(false);
+    if !recording || WATCHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let controller = *app.state::<&'static Controller>();
+        // Ignore an Esc that was already down when recording started.
+        let mut was_down = true;
+        while controller.phase() == Phase::Recording {
+            let down = unsafe { GetAsyncKeyState(VK_ESCAPE as i32) } as u16 & 0x8000 != 0;
+            if down && !was_down {
+                controller.cancel(&app);
+                break;
+            }
+            was_down = down;
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        WATCHING.store(false, Ordering::SeqCst);
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_escape(app: &AppHandle, recording: bool) {
     let esc: Shortcut = "Escape".parse().unwrap();
     let shortcuts = app.global_shortcut();
-    if phase == Phase::Recording {
+    if recording {
         let _ = shortcuts.register(esc);
     } else if shortcuts.is_registered(esc) {
         let _ = shortcuts.unregister(esc);

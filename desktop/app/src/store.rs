@@ -176,10 +176,15 @@ impl Secret {
         keyring::Entry::new(APP_NAME, user).ok()
     }
 
-    /// The stored key; `ANTHROPIC_API_KEY` / `GROQ_API_KEY` as a dev fallback.
+    /// The stored key. Development builds also read `ANTHROPIC_API_KEY` /
+    /// `GROQ_API_KEY`; release builds never do, so text only leaves the
+    /// machine after the user saved a key in Settings.
     pub fn get(self) -> Option<String> {
         if let Some(value) = self.entry().and_then(|e| e.get_password().ok()).filter(|v| !v.trim().is_empty()) {
             return Some(value);
+        }
+        if !cfg!(debug_assertions) {
+            return None;
         }
         let var = match self {
             Secret::Anthropic => "ANTHROPIC_API_KEY",

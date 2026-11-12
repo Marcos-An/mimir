@@ -173,9 +173,10 @@ impl Controller {
     pub fn cancel(&self, app: &AppHandle) {
         let recorder = {
             let mut inner = self.inner.lock().unwrap();
-            if inner.phase != Phase::Recording {
+            if inner.phase != Phase::Recording || inner.recorder.is_none() {
                 return;
             }
+            inner.phase = Phase::Idle;
             inner.recorder.take()
         };
         if let Some(recorder) = recorder {
@@ -188,13 +189,17 @@ impl Controller {
     pub fn stop(&'static self, app: &AppHandle) {
         let (recorder, started) = {
             let mut inner = self.inner.lock().unwrap();
-            if inner.phase != Phase::Recording {
+            if inner.phase != Phase::Recording || inner.recorder.is_none() {
                 return;
             }
+            // Leave Recording under the same lock, so an Esc arriving now
+            // finds nothing to cancel instead of cancelling a paste.
+            inner.phase = Phase::Transcribing;
             (inner.recorder.take(), inner.started.take())
         };
         let Some(recorder) = recorder else { return };
-        self.set_phase(app, Phase::Transcribing);
+        crate::shell::phase_changed(app, Phase::Transcribing);
+        self.publish(app);
         let app = app.clone();
         std::thread::spawn(move || {
             let result = self.finish(&app, recorder, started);

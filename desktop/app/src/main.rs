@@ -215,6 +215,12 @@ fn main() {
     whisper_rs::install_logging_hooks();
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--self-test") {
+        // Release builds have no console of their own; print into the one
+        // the command was typed in.
+        #[cfg(windows)]
+        unsafe {
+            windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
+        }
         let result = self_test(args.get(2).map(String::as_str).unwrap_or("base"));
         if let Err(error) = &result {
             eprintln!("self-test failed: {error}");
