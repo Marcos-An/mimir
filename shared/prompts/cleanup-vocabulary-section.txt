@@ -1,0 +1,4 @@
+
+User's personal vocabulary (people, projects, product names — verbatim spelling):
+{{terms}}
+When a garbled or phonetically-transcribed word plausibly matches one of these terms, restore the term exactly as written above. Do not force a match where the speech clearly means something else.

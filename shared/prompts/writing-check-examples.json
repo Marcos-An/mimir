@@ -1,0 +1,26 @@
+[
+  {
+    "content" : "<context></context>\n<check>\nI has went there yesterday.\n</check>",
+    "role" : "user"
+  },
+  {
+    "content" : "[{\"sentence\":\"I has went there yesterday.\",\"original\":\"has went\",\"replacement\":\"went\",\"why\":\"With a finished time like 'yesterday', use the simple past.\",\"kind\":\"grammar\"}]",
+    "role" : "assistant"
+  },
+  {
+    "content" : "<context></context>\n<check>\nThe deploy is done, lets check the logs.\n</check>",
+    "role" : "user"
+  },
+  {
+    "content" : "[{\"sentence\":\"The deploy is done, lets check the logs.\",\"original\":\"lets\",\"replacement\":\"let's\",\"why\":\"'Let's' (let us) needs an apostrophe; 'lets' means 'allows'.\",\"kind\":\"word\"}]",
+    "role" : "assistant"
+  },
+  {
+    "content" : "<context></context>\n<check>\nA gente sobe isso amanhã cedo.\n</check>",
+    "role" : "user"
+  },
+  {
+    "content" : "[]",
+    "role" : "assistant"
+  }
+]

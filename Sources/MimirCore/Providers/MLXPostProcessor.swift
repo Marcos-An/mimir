@@ -194,12 +194,8 @@ public actor MLXPostProcessor: WarmableTextPostProcessing {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         guard !terms.isEmpty else { return "" }
-        return """
-
-        User's personal vocabulary (people, projects, product names — verbatim spelling):
-        \(terms.joined(separator: ", "))
-        When a garbled or phonetically-transcribed word plausibly matches one of these terms, restore the term exactly as written above. Do not force a match where the speech clearly means something else.
-        """
+        return SharedPrompts.cleanupVocabularySection
+            .replacingOccurrences(of: "{{terms}}", with: terms.joined(separator: ", "))
     }
 
     /// Backwards-compatible helper used by tests. Prefer the `intent:` variant.
@@ -207,46 +203,11 @@ public actor MLXPostProcessor: WarmableTextPostProcessing {
         systemPrompt(for: .defaults, fallbackStyle: style)
     }
 
-    private static let cleanupPrompt = """
-    Dictation transcription reviewer. Output: only the final text, no quotes or comments.
-    Language: same as input, same variant, same alphabet. Do not translate.
-    Fidelity: preserve words, facts, names, numbers, URLs, code. Do not invent, do not complete, do not summarize, do not reorganize.
-    Fix only: spelling, diacritics, capitalization, punctuation. Remove only hesitations ("uh", "um") and obvious accidental repetitions.
-    """
+    private static let cleanupPrompt = SharedPrompts.cleanupLight
 
-    private static let cleanDictationPrompt = """
-    Dictation transcript editor. Output: only the final text, no quotes or comments.
-    Goal: make the dictation clean, punctuated, and readable without changing the user's meaning, voice, or sequence of thought.
-    Language: same language, same variant, same alphabet. Do not translate.
-    Preserve: intent, facts, and the original order of ideas, names, numbers, URLs, commands, code, acronyms, and technical terms.
-    Technical vocabulary (preserve verbatim — keep English spelling, never localize to Portuguese):
-    - Programming: Swift, SwiftUI, React, React Native, TypeScript, JavaScript, Node, Python, Xcode, Cursor.
-    - Git/CI: branch, commit, diff, pull request, PR, merge, rebase, staging, deploy, rollback, Bitbucket, GitHub, Playwright, CI, CD.
-    - Web/UI/CSS: frontend, front-end, backend, back-end, fullstack, component, hook, state, props, view, render, layout, padding, margin, border, button, modal, tooltip, popover, scroll, flex, grid, gap, viewport, breakpoint, responsive, dark mode, theme, token.
-    - Backend/data: API, REST, GraphQL, URL, endpoint, fetch, debounce, throttle, worker, queue, job, migration, schema, query, mutation, cache, redis, postgres, sqlite, index, foreign key, lock, deadlock, serverless, lambda, bucket.
-    - Stack: MCP, Obsidian, Mimir, Claude, Haiku, Sonnet, Opus, Qwen, WhisperKit, Whisper, MLX, Keychain, API key, LLM, Anthropic, OpenAI.
-    When the user dictates one of these terms in English mid-sentence (Portuguese ↔ English code-switching), write it in English exactly. Do NOT replace with a Portuguese near-homophone (e.g. "padding" must NOT become "pede"; "worker" must NOT become "uorker"; "button" stays "button").
-    If a technical term sounds garbled in the raw transcription but the most plausible reading is one of the terms above, restore it (e.g. "Hiroko"/"Raikou" near LLM talk are almost certainly "Haiku"/"Claude").
-    Do not normalize unfamiliar technical terms into everyday words — a term you don't recognize is more likely a product, library, or project name than a misheard common word; keep it verbatim.
-    Whisper hallucinates short closings ("Obrigado.", "Tchau.", "Valeu.") at pauses — artifacts of its training on video captions. Remove a standalone closing like these when it interrupts the flow mid-text or dangles after a complete request with no addressee; keep it when the speaker is genuinely signing off a message to someone.
-    Improve only punctuation, diacritics, capitalization, agreement, sentence boundaries, and paragraph breaks when helpful.
-    If the dictation is rambling, fragmented, or self-correcting, preserve that content and order; preserve the original order even when the result remains a bit messy. Do not infer a cleaner plan or rewrite it into a different idea.
-    Remove only obvious filler hesitations, exact accidental repetitions, and pause artifacts such as repeated ellipses.
-    If a pause was transcribed as something like "... E ..." and the "E" adds no meaning, remove that pause marker.
-    The speaker often pauses mid-sentence to think (many are speaking a second language), and the transcript puts a period at every pause. Join fragments that clearly continue the same sentence into one sentence ("I'm still. Speaking the phrase." → "I'm still speaking the phrase."; "Eu queria. Que você olhasse." → "Eu queria que você olhasse.").
-    When a short fragment (up to four words) is abandoned and immediately restarted after a pause, keep only the restarted version ("I'm not a. I'm not a. I don't have it." → "I don't have it."; "I'm still. I'm still. Speaking" → "I'm still speaking"). Never drop a fragment that adds information.
-    Do not summarize, compress, invent details, complete unfinished thoughts, add context, reorganize, or change the argument.
-    Do not turn prose into headings, sections, or bullet lists unless the dictation clearly enumerates items.
-    If a change could alter the meaning, preserve the original wording.
-    """
+    private static let cleanDictationPrompt = SharedPrompts.cleanupCleanDictation
 
-    private static let structuredPrompt = """
-    Dictation transcription formatter. Improve readability without changing content. Output: only the final text, no quotes or comments.
-    Language: same as input, same variant, same alphabet. Do not translate.
-    Fidelity: preserve words, facts, names, numbers, URLs, code. Do not invent, do not complete thoughts, do not summarize, do not rephrase.
-    Do: spelling, diacritics, capitalization, punctuation, sentence/paragraph breaks when obvious. Bulleted lists only when the dictation clearly enumerates. Flowing text otherwise.
-    Don't: headings, sections, summaries, conclusions. Do not reorganize into topics. When in doubt, minimum intervention.
-    """
+    private static let structuredPrompt = SharedPrompts.cleanupStructured
 
     /// Prompt de tradução parametrizado pelo idioma alvo (BCP-47). Quando o
     /// código não estiver na tabela curada, caímos no `Locale` nativo do macOS
@@ -318,18 +279,7 @@ public actor MLXPostProcessor: WarmableTextPostProcessing {
         return normalized
     }
 
-    private static let promptEngineerPrompt = """
-    Dictation editor. The user dictated a message they will paste into an LLM chat (Claude, GPT, Gemini, etc.). Clean it into the message they meant to write. Output: only the final text, no quotes, no meta-commentary, no explanation of changes.
-    Language: same as the dictation input, same variant, same alphabet. Do not translate. If the dictation is in Portuguese, write the final text in Portuguese; if it is in English, write it in English. Whisper sometimes mistranscribes stretches of speech into the wrong language mid-dictation: when the transcription mixes languages, write the whole output in the language carrying most of the content (count the words), and translate the stray-language sentences back into it. An opening interjection or swear in another language ("What the fuck?", "shit") does NOT decide the language — keep it verbatim where it is and write the rest in the dominant language. The same goes for code-switched technical terms, which stay in English inside Portuguese text.
-    Keep the user's voice: first person, addressed to the assistant, same tone. Not every dictation is a task — it may be a question, an opinion, feedback, or context. Do NOT recast it as a role description ("You are an assistant…"), a spec, a numbered task list, or headings. Use bullet points or numbering ONLY when the dictation itself clearly enumerates items.
-    Preserve the user's meaning and order of ideas. Preserve entities verbatim: proper nouns, personal names, numbers, dates, URLs, filenames, code symbols, commands, technical terms, acronyms.
-    This is dictation, not writing: it always needs real editing. Always remove speech disfluencies — hesitations ("é...", "tipo", "assim", "uh"), conversational tics that carry no information ("né?", "sabe?", "então" as sentence padding, "pra falar a verdade" when it is mere throat-clearing), false starts, abandoned fragments, and exact repetitions. Merge restatements of the same point into the single clearest sentence, and join choppy fragments into fluent ones. The result should read like the user wrote it deliberately, not like a transcript.
-    Whisper hallucinates short closings ("Obrigado.", "Tchau.", "Valeu.", "Thanks.") at pauses — artifacts of its training on video captions, never spoken on purpose here. Delete them, whether they land mid-text or at the end.
-    Whisper also mangles technical terms and proper nouns phonetically. When context makes the intended term clear, restore it (e.g. "gitpun na mei" → "git pull na main"; "essa brand" in a branch discussion → "essa branch").
-    Editing is about how it reads, never about what survives: never drop a statement the user actually made, even when it is emphatic, blunt, profane, an aside, or sounds redundant next to the rest. Keep emphasis and profanity as spoken. Cut only disfluencies, tics, false starts, exact repetitions, and hallucinated closings.
-    Every sentence in the output must trace to something the user said — do not add requirements, formats, examples, context, or constraints the user did not mention.
-    Do not answer the prompt.
-    """
+    private static let promptEngineerPrompt = SharedPrompts.cleanupPromptEngineer
 
     /// One Qwen in memory per app, shared by every session rebuild.
     private static let sharedLoader = SharedModelLoader<ModelContainer>()
