@@ -24,6 +24,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Guarda as últimas gravações em disco (ver `RecordingArchive`). Desligado
     /// por padrão: é áudio do usuário, só fica quando ele pede.
     public var keepsRecentRecordings: Bool
+    /// Writing check: Claude underlines mistakes while the user types. Off by
+    /// default, because the typed text leaves the Mac.
+    public var writingCheckEnabled: Bool
+    /// Apps where the writing check runs (bundle IDs). An allowlist, so code
+    /// editors, browsers and anything holding secrets stay private by default.
+    public var writingAllowedBundleIDs: [String]
+    /// Where the check runs: every app (minus `WritingAppPolicy.alwaysSkipped`
+    /// and the user's skip list) or only `writingAllowedBundleIDs`.
+    public var writingAppScope: WritingAppScope
+    /// Apps the user chose to skip while checking in all apps.
+    public var writingSkippedBundleIDs: [String]
+
+    public var writingAppPolicy: WritingAppPolicy {
+        WritingAppPolicy(scope: writingAppScope, listed: Set(writingAllowedBundleIDs), skipped: Set(writingSkippedBundleIDs))
+    }
+
+    public static let defaultWritingAllowedBundleIDs = ["com.tinyspeck.slackmacgap", "com.apple.Notes"]
 
     public init(
         activationMode: ActivationMode,
@@ -40,7 +57,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         preferredLanguage: String?,
         inputDeviceUID: String? = nil,
         customVocabulary: String = "",
-        keepsRecentRecordings: Bool = false
+        keepsRecentRecordings: Bool = false,
+        writingCheckEnabled: Bool = false,
+        writingAllowedBundleIDs: [String] = AppSettings.defaultWritingAllowedBundleIDs,
+        writingAppScope: WritingAppScope = .allApps,
+        writingSkippedBundleIDs: [String] = []
     ) {
         self.activationMode = activationMode
         self.activationTrigger = activationTrigger
@@ -57,6 +78,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.inputDeviceUID = inputDeviceUID
         self.customVocabulary = customVocabulary
         self.keepsRecentRecordings = keepsRecentRecordings
+        self.writingCheckEnabled = writingCheckEnabled
+        self.writingAllowedBundleIDs = writingAllowedBundleIDs
+        self.writingAppScope = writingAppScope
+        self.writingSkippedBundleIDs = writingSkippedBundleIDs
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -67,6 +92,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case insertionStrategy, shouldAutoPaste
         case preferredLanguage, inputDeviceUID
         case customVocabulary, keepsRecentRecordings
+        case writingCheckEnabled, writingAllowedBundleIDs
+        case writingAppScope, writingSkippedBundleIDs
     }
 
     /// Chaves que existem só para migração de esquemas antigos — nunca são
@@ -101,6 +128,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.inputDeviceUID = try container.decodeIfPresent(String.self, forKey: .inputDeviceUID)
         self.customVocabulary = try container.decodeIfPresent(String.self, forKey: .customVocabulary) ?? ""
         self.keepsRecentRecordings = try container.decodeIfPresent(Bool.self, forKey: .keepsRecentRecordings) ?? false
+        self.writingCheckEnabled = try container.decodeIfPresent(Bool.self, forKey: .writingCheckEnabled) ?? false
+        self.writingAllowedBundleIDs = try container.decodeIfPresent([String].self, forKey: .writingAllowedBundleIDs)
+            ?? Self.defaultWritingAllowedBundleIDs
+        self.writingAppScope = try container.decodeIfPresent(WritingAppScope.self, forKey: .writingAppScope) ?? .allApps
+        self.writingSkippedBundleIDs = try container.decodeIfPresent([String].self, forKey: .writingSkippedBundleIDs) ?? []
     }
 
     public static let `default` = AppSettings(

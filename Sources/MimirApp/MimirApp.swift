@@ -13,6 +13,7 @@ struct MimirApp: App {
     private let hotkey: GlobalHotkeyMonitor
     private let island: RecordingIslandController
     private let menuBar: MenuBarController
+    private let writingCheck: WritingCheckController
     @State private var levelMonitor: AudioLevelMonitor
     @State private var downloadMonitor: ModelDownloadMonitor
 
@@ -61,6 +62,7 @@ struct MimirApp: App {
         self.hotkey = hotkey
         self.island = island
         self.menuBar = menuBar
+        self.writingCheck = WritingCheckController(store: store, model: model)
         _store = State(initialValue: store)
         _model = State(initialValue: model)
         _levelMonitor = State(initialValue: levelMonitor)
@@ -292,6 +294,96 @@ struct SettingsSections {
         }
     }
 
+    var writingSection: some View {
+        VStack(spacing: 0) {
+            SettingsRow(
+                title: "Check my writing",
+                subtitle: "Underlines mistakes while you type. Hover an underline to see the fix and why."
+            ) {
+                Toggle("Check my writing", isOn: $store.settings.writingCheckEnabled)
+                    .toggleStyle(SettingsSwitchStyle())
+            }
+            if store.settings.writingCheckEnabled {
+                SettingsRow(
+                    title: "Leaves your Mac",
+                    subtitle: "What you type in the checked apps is sent to Anthropic (Claude). Password fields never are."
+                ) { EmptyView() }
+                AnthropicAPIKeyRow()
+                if ClaudeCreditsState.shared.isOutOfCredits {
+                    SettingsRow(
+                        title: "Out of credits",
+                        subtitle: ClaudeCreditsState.message,
+                        subtitleColor: .red
+                    ) {
+                        Button("Add credits") { NSWorkspace.shared.open(ClaudeCreditsState.billingURL) }
+                            .buttonStyle(SecondaryCapsuleButtonStyle())
+                            .pointerStyle(.link)
+                    }
+                }
+                SettingsRow(
+                    title: "Checks today",
+                    subtitle: WritingCheckStatus.shared.keyRejected
+                        ? "Claude rejected the API key. Save a new key to resume."
+                        : "Stops for the day at the limit, so a bug can't run up costs.",
+                    subtitleColor: WritingCheckStatus.shared.keyRejected ? .red : MimirTheme.tertiaryInk
+                ) {
+                    Text("\(WritingCheckStatus.shared.requestsToday) of \(WritingCheckStatus.shared.dailyCap.formatted())")
+                        .font(.system(size: 14).monospacedDigit())
+                        .foregroundStyle(MimirTheme.secondaryInk)
+                }
+            }
+            SettingsGroupLabel("Apps")
+            SettingsRow(
+                title: "Check in",
+                subtitle: store.settings.writingAppScope == .allApps
+                    ? "Every app except terminals, code editors and password managers."
+                    : "Only the apps listed below."
+            ) {
+                SegmentedPicker(
+                    selection: $store.settings.writingAppScope,
+                    options: [(.allApps, "All apps"), (.listedApps, "Only these")]
+                )
+            }
+            if store.settings.writingAppScope == .allApps {
+                writingAppList(
+                    $store.settings.writingSkippedBundleIDs,
+                    addTitle: "Skip an app",
+                    addSubtitle: "Apps you never want checked.",
+                    alsoExcluding: WritingAppPolicy.alwaysSkipped
+                )
+            } else {
+                writingAppList(
+                    $store.settings.writingAllowedBundleIDs,
+                    addTitle: "Add an app",
+                    addSubtitle: "Only apps you list here are checked.",
+                    alsoExcluding: WritingAppPolicy.alwaysSkipped
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func writingAppList(_ bundleIDs: Binding<[String]>, addTitle: String, addSubtitle: String, alsoExcluding: Set<String>) -> some View {
+        ForEach(bundleIDs.wrappedValue, id: \.self) { bundleID in
+            SettingsRow(title: WritingAppName.name(for: bundleID)) {
+                Button("Remove") {
+                    bundleIDs.wrappedValue.removeAll { $0 == bundleID }
+                }
+                .buttonStyle(SecondaryCapsuleButtonStyle())
+                .pointerStyle(.link)
+            }
+        }
+        SettingsRow(title: addTitle, subtitle: addSubtitle) {
+            Menu("Running apps") {
+                ForEach(WritingAppName.runningCandidates(excluding: bundleIDs.wrappedValue + Array(alsoExcluding)), id: \.bundleID) { app in
+                    Button(app.name) { bundleIDs.wrappedValue.append(app.bundleID) }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
     var permissionsSection: some View {
         PermissionsSettingsCard()
     }
@@ -464,12 +556,12 @@ private struct DropdownMenu<Value: Hashable>: View {
     }
 }
 
-/// Campo para colar/atualizar a API key da Anthropic. A chave vai para o
-/// Keychain (nunca UserDefaults) e a linha mostra apenas se existe uma chave,
-/// nunca o valor salvo.
+/// Field to paste or replace the Anthropic API key. The key goes to a private
+/// file (see `AnthropicAPIKey`, never UserDefaults); the row only shows whether
+/// a key exists, never its value.
 private struct AnthropicAPIKeyRow: View {
     @State private var draft: String = ""
-    @State private var hasStoredKey: Bool = KeychainStore.read(account: AnthropicPostProcessor.apiKeyAccount) != nil
+    @State private var hasStoredKey: Bool = AnthropicAPIKey.hasStoredKey()
     @State private var feedback: String?
     @State private var editing = false
 
@@ -490,7 +582,8 @@ private struct AnthropicAPIKeyRow: View {
                         .disabled(trimmedDraft.isEmpty)
                     if hasStoredKey {
                         Button("Remove") {
-                            KeychainStore.delete(account: AnthropicPostProcessor.apiKeyAccount)
+                            AnthropicAPIKey.delete()
+                            WritingCheckStatus.shared.keyChanged()
                             hasStoredKey = false
                             feedback = "Key removed."
                             editing = false
@@ -540,13 +633,14 @@ private struct AnthropicAPIKeyRow: View {
 
     private func save() {
         guard !trimmedDraft.isEmpty else { return }
-        if KeychainStore.write(account: AnthropicPostProcessor.apiKeyAccount, value: trimmedDraft) {
+        if AnthropicAPIKey.write(trimmedDraft) {
+            WritingCheckStatus.shared.keyChanged()
             draft = ""
             hasStoredKey = true
             feedback = "Key saved."
             editing = false
         } else {
-            feedback = "Could not save to Keychain."
+            feedback = "Could not save the key."
         }
     }
 }

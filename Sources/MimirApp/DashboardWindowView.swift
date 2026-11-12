@@ -71,7 +71,7 @@ struct DashboardWindowView: View {
 // MARK: - Settings sections
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, audio, pipeline, permissions, about
+    case general, audio, pipeline, writing, permissions, about
     var id: String { rawValue }
 
     var title: String {
@@ -79,6 +79,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .audio: return "Audio"
         case .pipeline: return "Pipeline"
+        case .writing: return "Writing"
         case .permissions: return "Permissions"
         case .about: return "About"
         }
@@ -89,6 +90,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "slider.horizontal.3"
         case .audio: return "mic"
         case .pipeline: return "waveform.path"
+        case .writing: return "text.badge.checkmark"
         case .permissions: return "checkmark.shield"
         case .about: return "info.circle"
         }
@@ -1070,6 +1072,8 @@ struct SettingsSectionsRouter: View {
             sections.audioSection
         case "pipeline":
             sections.pipelineSection
+        case "writing":
+            sections.writingSection
         case "permissions":
             sections.permissionsSection
         case "about":
