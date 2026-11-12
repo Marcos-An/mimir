@@ -1,0 +1,11 @@
+{
+  "_doc": "Anthropic Messages API: which error replies mean the account is out of credits.",
+  "outOfCredits": [
+    {"status": 402, "body": "", "out": true},
+    {"status": 400, "body": "{\"type\":\"error\",\"error\":{\"type\":\"billing_error\",\"message\":\"x\"}}", "out": true},
+    {"status": 400, "body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API.\"}}", "out": true},
+    {"status": 400, "body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"max_tokens is too large\"}}", "out": false},
+    {"status": 500, "body": "{\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"credit balance\"}}", "out": false},
+    {"status": 401, "body": "{}", "out": false}
+  ]
+}

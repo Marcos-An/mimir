@@ -1,0 +1,31 @@
+{
+  "_doc": "DictationTextCleaner. clean: the full rule pass. midTextFarewells: stripMidTextFarewells, run before the AI cleanup.",
+  "clean": [
+    {"in": "The punctuation is not very correct. Is...", "out": "The punctuation is not very correct. Is."},
+    {"in": "Transcrevi primeiro, não?... Passar por um LLM.", "out": "Transcrevi primeiro, não? Passar por um LLM."},
+    {"in": "Vou verificar… depois te falo.", "out": "Vou verificar depois te falo."},
+    {"in": "E... Eu acho que sim", "out": "E. Eu acho que sim."},
+    {"in": "Obrigado!", "out": "Obrigado!"},
+    {"in": "Pode mandar o arquivo. Obrigado.", "out": "Pode mandar o arquivo."},
+    {"in": "Pode mandar o arquivo. Obrigado. Tchau.", "out": "Pode mandar o arquivo."},
+    {"in": "bom dia, tudo bem?", "out": "Bom dia, tudo bem?"},
+    {"in": "Me avisa quando terminar", "out": "Me avisa quando terminar."},
+    {"in": "O meu CNPJ .", "out": "O meu CNPJ."},
+    {"in": "Ahn, eu acho que os os testes passaram", "out": "Eu acho que os testes passaram."},
+    {"in": "Isso com com hum o cache", "out": "Isso com o cache."},
+    {"in": "Não, não. O que que é isso", "out": "Não, não. O que que é isso."},
+    {"in": "Ah, entendi o lado humano", "out": "Ah, entendi o lado humano."},
+    {"in": "acesse site.com e veja a v1.2", "out": "Acesse site.com e veja a v1.2."},
+    {"in": "primeira linha\nsegunda linha", "out": "Primeira linha\nSegunda linha."},
+    {"in": "é isso. ótimo trabalho", "out": "É isso. Ótimo trabalho."},
+    {"in": "3 itens faltando", "out": "3 itens faltando."},
+    {"in": "Uh, the the build is green 👍", "out": "The build is green 👍"},
+    {"in": "   ", "out": "   "}
+  ],
+  "midTextFarewells": [
+    {"in": "Obrigado.", "out": "Obrigado."},
+    {"in": "Valeu pela ajuda. Tchau.", "out": "Valeu pela ajuda. Tchau."},
+    {"in": "Primeiro ponto. Tchau. Segundo ponto.", "out": "Primeiro ponto. Segundo ponto."},
+    {"in": "First thing. Thank you. Second thing", "out": "First thing. Second thing"}
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "_doc": "Writing check pure logic. Ranges are UTF-16 [location, length], as macOS Accessibility uses; ports convert at the OS boundary.",
+  "sentences": [
+    {"text": "Hi there. Version 1.2 is out!\nNext line and more",
+     "sentences": [["Hi there.", 0, 9, true], ["Version 1.2 is out!", 10, 19, true], ["Next line and more", 30, 18, false]]},
+    {"text": "  Wait... what?!  ok", "sentences": [["Wait...", 2, 7, true], ["what?!", 10, 6, true], ["ok", 18, 2, false]]},
+    {"text": "Olá 👋 tudo bem. Sim", "sentences": [["Olá 👋 tudo bem.", 0, 16, true], ["Sim", 17, 3, false]]},
+    {"text": "", "sentences": []}
+  ],
+  "acceptable": [
+    {"sentence": "I has went there yesterday.", "original": "has went", "replacement": "went", "kind": "grammar", "ok": true},
+    {"sentence": "I has went there yesterday.", "original": "have gone", "replacement": "went", "kind": "grammar", "ok": false},
+    {"sentence": "its fine, its done", "original": "its", "replacement": "it's", "kind": "word", "ok": false},
+    {"sentence": "I has went there yesterday.", "original": "I has went there yesterday.", "replacement": "Yesterday I finally made my way over to that place.", "kind": "phrasing", "ok": false},
+    {"sentence": "I recieved it.", "original": "recieved", "replacement": "telescope", "kind": "spelling", "ok": false},
+    {"sentence": "I recieved it.", "original": "recieved", "replacement": "received", "kind": "spelling", "ok": true},
+    {"sentence": "I has went there yesterday.", "original": "went", "replacement": "went", "kind": "grammar", "ok": false},
+    {"sentence": "I has went there yesterday.", "original": " ", "replacement": "x", "kind": "grammar", "ok": false},
+    {"sentence": "We discussed about it.", "original": "discussed about", "replacement": "discussed", "kind": "grammar", "ok": true}
+  ],
+  "parse": [
+    {"reply": "Sure: [{\"sentence\":\"I has went there yesterday.\",\"original\":\"has went\",\"replacement\":\"went\",\"why\":\"Simple past.\",\"kind\":\"grammar\"},{\"sentence\":\"Other text.\",\"original\":\"x\",\"replacement\":\"y\",\"why\":\"\",\"kind\":\"grammar\"},{\"sentence\":\"I has went there yesterday.\",\"original\":\"there\",\"replacement\":\"their\",\"why\":\"\",\"kind\":\"bogus\"}]",
+     "checked": ["I has went there yesterday."],
+     "findings": [{"sentence": "I has went there yesterday.", "original": "has went", "replacement": "went", "why": "Simple past.", "kind": "grammar"}]},
+    {"reply": "not json", "checked": ["I has went there yesterday."], "findings": []},
+    {"reply": "[]", "checked": ["Fine."], "findings": []}
+  ],
+  "anchor": [
+    {"text": "Hello, team! I has went there yesterday. More text", "sentence": "I has went there yesterday.", "original": "has went", "range": [15, 8]},
+    {"text": "Hello. I has went there yesterday.", "sentence": "I has went there yesterday.", "original": "has went", "range": [9, 8]},
+    {"text": "Hello. I has gone there yesterday.", "sentence": "I has went there yesterday.", "original": "has went", "range": null},
+    {"text": "I has went there yesterday. I has went there yesterday.", "sentence": "I has went there yesterday.", "original": "has went", "range": null},
+    {"text": "👋 I has went there.", "sentence": "I has went there.", "original": "has went", "range": [5, 8]}
+  ],
+  "apply": [
+    {"text": "Hello, team! I has went there yesterday. More text", "sentence": "I has went there yesterday.", "original": "has went", "replacement": "went",
+     "result": "Hello, team! I went there yesterday. More text"}
+  ],
+  "touchesVocabulary": [
+    {"original": "Trecho app", "replacement": "Trench app", "vocabulary": ["Trecho"], "touches": true},
+    {"original": "Trecho app", "replacement": "Trecho's app", "vocabulary": ["Trecho"], "touches": false},
+    {"original": "teh", "replacement": "the", "vocabulary": ["Mimir"], "touches": false}
+  ]
+}
