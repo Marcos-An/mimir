@@ -197,13 +197,16 @@ public enum DictationTextCleaner {
     /// domínios/versões ("site.com", "v1.2").
     static func capitalizeSentenceStarts(_ input: String) -> String {
         guard !input.isEmpty else { return input }
-        var chars = Array(input)
+        let chars = Array(input)
+        // Uppercasing can grow a letter ("ß" → "SS"), so the result is built
+        // as strings; Character("SS") would crash.
+        var pieces = chars.map(String.init)
         var atSentenceStart = true
         var index = 0
         while index < chars.count {
             let char = chars[index]
             if atSentenceStart, char.isLetter {
-                chars[index] = Character(char.uppercased())
+                pieces[index] = char.uppercased()
                 atSentenceStart = false
             } else if ".!?".contains(char) {
                 // Só conta como fim de sentença se vier espaço/quebra depois.
@@ -219,7 +222,7 @@ public enum DictationTextCleaner {
             }
             index += 1
         }
-        return String(chars)
+        return pieces.joined()
     }
 
     static func ensureTerminalPunctuation(_ input: String) -> String {

@@ -1,6 +1,7 @@
 {
   "_doc": "DictationTextCleaner. clean: the full rule pass. midTextFarewells: stripMidTextFarewells, run before the AI cleanup.",
   "clean": [
+    {"in": "ok. ßtraße bleibt. ﬁm do texto", "out": "Ok. SStraße bleibt. FIm do texto."},
     {"in": "The punctuation is not very correct. Is...", "out": "The punctuation is not very correct. Is."},
     {"in": "Transcrevi primeiro, não?... Passar por um LLM.", "out": "Transcrevi primeiro, não? Passar por um LLM."},
     {"in": "Vou verificar… depois te falo.", "out": "Vou verificar depois te falo."},
