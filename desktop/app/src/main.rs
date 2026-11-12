@@ -14,6 +14,7 @@ use serde_json::json;
 use store::{Engine, Secret, Settings, SpeedResult};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
+
 type Ctl<'a> = State<'a, &'static Controller>;
 
 #[tauri::command]
@@ -37,7 +38,8 @@ struct SettingsView {
     has_anthropic_key: bool,
     has_groq_key: bool,
     slow_seconds: f64,
-    data_dir: String,
+    out_of_credits: bool,
+    version: &'static str,
 }
 
 #[tauri::command]
@@ -48,7 +50,64 @@ fn get_settings(controller: Ctl) -> SettingsView {
         has_anthropic_key: Secret::Anthropic.get().is_some(),
         has_groq_key: Secret::Groq.get().is_some(),
         slow_seconds: stt::SLOW_SECONDS_PER_30S,
-        data_dir: store::data_dir().display().to_string(),
+        out_of_credits: polish::OUT_OF_CREDITS.load(std::sync::atomic::Ordering::Relaxed),
+        version: env!("CARGO_PKG_VERSION"),
+    }
+}
+
+#[tauri::command]
+fn restore_defaults(app: AppHandle, controller: Ctl) -> Result<SettingsView, String> {
+    let defaults = Settings { speed: controller.settings.lock().unwrap().speed.clone(), ..Settings::default() };
+    save_settings(app, controller.clone(), defaults)?;
+    Ok(get_settings(controller))
+}
+
+#[tauri::command]
+fn get_history(controller: Ctl) -> Vec<store::HistoryEntry> {
+    controller.history()
+}
+
+#[tauri::command]
+fn delete_entry(app: AppHandle, controller: Ctl, id: u64) -> Vec<store::HistoryEntry> {
+    controller.edit_history(&app, |entries| entries.retain(|e| e.id != id))
+}
+
+#[tauri::command]
+fn clear_history(app: AppHandle, controller: Ctl) -> Vec<store::HistoryEntry> {
+    controller.edit_history(&app, |entries| entries.clear())
+}
+
+#[tauri::command]
+fn list_microphones() -> Vec<String> {
+    audio::microphones()
+}
+
+#[tauri::command]
+fn cancel_dictation(app: AppHandle, controller: Ctl) {
+    controller.cancel(&app);
+}
+
+#[tauri::command]
+fn finish_dictation(app: AppHandle, controller: Ctl) {
+    let controller: &'static Controller = *controller;
+    controller.stop(&app);
+}
+
+#[tauri::command]
+fn island_visible(app: AppHandle, visible: bool) {
+    shell::show_island(&app, visible);
+}
+
+#[tauri::command]
+fn open_main(app: AppHandle) {
+    shell::show_main(&app, None);
+}
+
+/// The panel window hugs the panel's height, like the Mac's anchored panel.
+#[tauri::command]
+fn fit_panel(app: AppHandle, height: f64) {
+    if let Some(panel) = app.get_webview_window("panel") {
+        let _ = panel.set_size(tauri::LogicalSize::new(362.0, height + 2.0));
     }
 }
 
@@ -68,12 +127,14 @@ fn set_secret(name: Secret, value: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn download_model(app: AppHandle, id: String) -> Result<(), String> {
+async fn download_model(app: AppHandle, controller: Ctl<'_>, id: String) -> Result<(), String> {
+    let controller: &'static Controller = *controller;
     tauri::async_runtime::spawn_blocking(move || {
         let model = stt::model(&id).ok_or("Unknown model.")?;
         let result = model.download(|done, total| {
-            let _ = app.emit("download", json!({"id": model.id, "done": done, "total": total}));
+            controller.set_download(&app, Some(controller::Download { id: model.id.into(), done, total }));
         });
+        controller.set_download(&app, None);
         store::log("model-download", &[("model", json!(model.id)), ("ok", json!(result.is_ok()))]);
         result
     })
@@ -102,11 +163,6 @@ async fn run_speed_test(controller: Ctl<'_>) -> Result<SpeedResult, String> {
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
     paste::copy(&text)
-}
-
-#[tauri::command]
-fn open_settings(app: AppHandle) {
-    shell::show_settings(&app);
 }
 
 #[tauri::command]
@@ -169,8 +225,14 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // Starting Mimir again opens it; `mimir --settings` opens Settings.
-            if args.iter().any(|a| a == "--settings") {
-                shell::show_settings(app);
+            if let Some(arg) = args.iter().find(|a| a.starts_with("--settings")) {
+                let section = arg.strip_prefix("--settings=").unwrap_or("general");
+                shell::show_main(app, Some(section));
+            } else if args.iter().any(|a| a == "--open") {
+                shell::show_main(app, None);
+            } else if args.iter().any(|a| a == "--preview-island") {
+                // Shows the island in its recording look, for screenshots.
+                let _ = app.emit_to("island", "state", json!({"phase": "recording"}));
             } else {
                 shell::show_panel(app, None);
             }
@@ -182,6 +244,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             shell::build_tray(app.handle())?;
+            shell::build_island(app.handle())?;
             let settings = controller.settings.lock().unwrap().clone();
             let shortcut_ok = shell::register_shortcut(app.handle(), None, &settings.shortcut).is_ok();
             store::log(
@@ -197,7 +260,7 @@ fn main() {
             let local_missing = settings.engine == Engine::Local
                 && !stt::model(&settings.local_model).map(|m| m.is_downloaded()).unwrap_or(false);
             if !shortcut_ok || local_missing {
-                shell::show_settings(app.handle());
+                shell::show_main(app.handle(), Some(if shortcut_ok { "pipeline" } else { "general" }));
             }
             Ok(())
         })
@@ -219,8 +282,17 @@ fn main() {
             download_model,
             run_speed_test,
             copy_text,
-            open_settings,
             hide_panel,
+            restore_defaults,
+            get_history,
+            delete_entry,
+            clear_history,
+            list_microphones,
+            cancel_dictation,
+            finish_dictation,
+            island_visible,
+            open_main,
+            fit_panel,
             open_billing,
             open_url,
             open_data_folder,

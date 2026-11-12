@@ -5,7 +5,7 @@ use crate::store::HotkeyMode;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, PhysicalPosition, Rect};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Rect};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
 const ICON: &[u8] = include_bytes!("../icons/32x32.png");
@@ -58,8 +58,8 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => show_panel(app, None),
-            "settings" => show_settings(app),
+            "open" => show_main(app, None),
+            "settings" => show_main(app, Some("general")),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -107,11 +107,59 @@ pub fn show_panel(app: &AppHandle, near: Option<Rect>) {
     }
 }
 
-pub fn show_settings(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("settings") {
+/// The "Open Mimir" window (journal); with a section, its Settings sheet opens.
+pub fn show_main(app: &AppHandle, section: Option<&str>) {
+    if let Some(panel) = app.get_webview_window("panel") {
+        let _ = panel.hide();
+    }
+    if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+        if let Some(section) = section {
+            let _ = window.emit_to("main", "open-settings", section);
+        }
+    }
+}
+
+/// The recording island: a borderless, transparent window that never takes
+/// focus, so the dictation is pasted in the app the user is typing in.
+pub fn build_island(app: &AppHandle) -> tauri::Result<()> {
+    tauri::WebviewWindowBuilder::new(app, "island", tauri::WebviewUrl::App("island.html".into()))
+        .title("Mimir Island")
+        .inner_size(440.0, 76.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible_on_all_workspaces(true)
+        .focused(false)
+        .focusable(false)
+        .visible(false)
+        .build()?;
+    Ok(())
+}
+
+/// Bottom centre of the work area, the pill 24 px above the taskbar/Dock.
+pub fn show_island(app: &AppHandle, visible: bool) {
+    let Some(island) = app.get_webview_window("island") else { return };
+    if !visible {
+        let _ = island.hide();
+        return;
+    }
+    if !island.is_visible().unwrap_or(false) {
+        if let Ok(Some(monitor)) = island.current_monitor().or_else(|_| island.primary_monitor()) {
+            let scale = monitor.scale_factor();
+            let area = monitor.work_area();
+            let width = (440.0 * scale) as i32;
+            let height = (76.0 * scale) as i32;
+            let x = area.position.x + (area.size.width as i32 - width) / 2;
+            let y = area.position.y + area.size.height as i32 - height - ((24.0 - 20.0) * scale) as i32;
+            let _ = island.set_position(PhysicalPosition::new(x, y));
+        }
+        let _ = island.show();
     }
 }
 

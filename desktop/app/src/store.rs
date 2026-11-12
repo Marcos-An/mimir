@@ -66,6 +66,10 @@ pub struct Settings {
     pub style: CleanupStyle,
     pub vocabulary: String,
     pub speed: Option<SpeedResult>,
+    /// Input device name; None follows the system default.
+    pub microphone: Option<String>,
+    /// Off: the text only goes to history and the clipboard.
+    pub paste: bool,
 }
 
 impl Default for Settings {
@@ -80,6 +84,8 @@ impl Default for Settings {
             style: CleanupStyle::CleanDictation,
             vocabulary: String::new(),
             speed: None,
+            microphone: None,
+            paste: true,
         }
     }
 }
@@ -98,16 +104,22 @@ impl Settings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct HistoryEntry {
+    pub id: u64,
+    /// RFC 3339, local offset.
     pub at: String,
     pub text: String,
+    pub audio_ms: u64,
+    pub stt_ms: u64,
+    pub polish_ms: u64,
 }
 
 pub struct History;
 
 impl History {
-    const KEEP: usize = 50;
+    const KEEP: usize = 500;
 
     fn path() -> PathBuf {
         data_dir().join("history.json")
@@ -117,11 +129,17 @@ impl History {
         fs::read(Self::path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
     }
 
-    /// Newest first.
-    pub fn push(entries: &mut Vec<HistoryEntry>, text: &str) {
-        entries.insert(0, HistoryEntry { at: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(), text: text.to_string() });
-        entries.truncate(Self::KEEP);
+    pub fn save(entries: &[HistoryEntry]) {
         let _ = write_atomic(&Self::path(), &serde_json::to_vec(entries).unwrap());
+    }
+
+    /// Newest first.
+    pub fn push(entries: &mut Vec<HistoryEntry>, mut entry: HistoryEntry) {
+        entry.id = entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        entry.at = chrono::Local::now().to_rfc3339();
+        entries.insert(0, entry);
+        entries.truncate(Self::KEEP);
+        Self::save(entries);
     }
 }
 

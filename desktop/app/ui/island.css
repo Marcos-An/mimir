@@ -1,0 +1,60 @@
+/* RecordingIsland.swift. Dark only, like the Mac. */
+html, body { background: transparent; height: 100%; overflow: hidden; }
+body { display: flex; align-items: center; justify-content: center; }
+.pill {
+  height: 36px;
+  border-radius: 18px;
+  background: #141416;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.09), 0 4px 10px rgba(0,0,0,.25);
+  padding: 0 14px;
+  display: flex; align-items: center;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(6px) scale(.92);
+  transition: opacity .3s cubic-bezier(.2,.9,.3,1), transform .3s cubic-bezier(.2,.9,.3,1), padding .28s ease;
+}
+.pill.shown { opacity: 1; transform: none; }
+.pill.buttons { padding: 0 5px; }
+.row { display: flex; align-items: center; }
+.hidden { display: none !important; }
+
+/* Recording */
+.recording .inner { display: flex; align-items: center; gap: 10px; transition: padding .28s ease; }
+.pill.buttons .recording .inner { padding: 0 10px; }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff453a; animation: blink .8s ease-in-out infinite alternate; }
+@keyframes blink { from { opacity: 1; } to { opacity: .35; } }
+.wave { display: flex; align-items: center; gap: 3px; height: 18px; }
+.wave span { width: 3px; height: 3px; border-radius: 1.5px; background: rgba(255,255,255,.92); transition: height .1s linear; }
+.timer { font: 500 12px var(--mono); color: rgba(255,255,255,.55); min-width: 28px; }
+.round {
+  width: 26px; height: 26px; border-radius: 50%; border: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none;
+}
+.round svg { width: 10px; height: 10px; display: block; }
+.cancel { background: rgba(255,255,255,.13); color: #fff; }
+.cancel:hover { background: rgba(255,255,255,.22); }
+.finish { background: rgba(255,255,255,.9); color: #141416; }
+.finish:hover { background: #fff; }
+.reveal { width: 0; opacity: 0; transform: scale(.85); overflow: hidden; transition: width .28s ease, opacity .09s ease-in, transform .28s ease; }
+.reveal.left { transform: translateX(12px) scale(.85); }
+.reveal.right { transform: translateX(-12px) scale(.85); }
+.pill.buttons .reveal { width: 26px; opacity: 1; transform: none; transition: width .28s ease, opacity .2s ease-out .04s, transform .28s ease; }
+
+/* Processing */
+.processing { gap: 9px; }
+.phase-label { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.9); }
+.bar { width: 64px; height: 3px; border-radius: 1.5px; background: rgba(255,255,255,.15); overflow: hidden; }
+.bar-fill { height: 100%; min-width: 2px; width: 0; background: #fff; border-radius: 1.5px; }
+
+/* Notice */
+.notice { gap: 7px; max-width: 320px; }
+.notice-icon svg { width: 11px; height: 11px; display: block; }
+.notice-icon.error { color: #ff9f0a; }
+.notice-icon.info { color: rgba(255,255,255,.7); }
+.notice-text { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Metrics flash */
+.metrics { gap: 10px; }
+.metric { display: flex; align-items: center; gap: 4px; }
+.metric svg { width: 10px; height: 10px; display: block; color: rgba(255,255,255,.5); }
+.metric b { font: 600 12px var(--mono); color: rgba(255,255,255,.88); }

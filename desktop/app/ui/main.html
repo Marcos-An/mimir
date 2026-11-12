@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mimir</title>
+  <link rel="stylesheet" href="mac.css">
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <!-- DashboardWindowView.swift: toolbar, journal, settings sheet. -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <img class="mark" src="mark.svg" alt="Mimir">
+      <label class="search">
+        <span data-icon="search"></span>
+        <input id="search" type="text" placeholder="Search transcriptions" spellcheck="false" autocomplete="off">
+        <button id="clear-search" class="clear-search hidden" aria-label="Clear search"><span data-icon="xcircle"></span></button>
+      </label>
+    </div>
+    <div class="toolbar-right">
+      <span class="shortcut-hint"><span id="hint-caps" class="hint-caps"></span><span class="hint-text">to dictate</span></span>
+      <button id="gear" class="gear" title="Settings" aria-label="Settings"><span data-icon="gear"></span></button>
+    </div>
+  </div>
+
+  <main class="journal">
+    <div id="journal" class="journal-inner"></div>
+  </main>
+
+  <div id="sheet-backdrop" class="sheet-backdrop hidden">
+    <div class="sheet" role="dialog" aria-label="Settings">
+      <nav class="sidebar">
+        <div id="sections" class="sections"></div>
+        <span class="spacer"></span>
+        <button id="restore" class="restore">Restore defaults</button>
+      </nav>
+      <div class="sheet-main">
+        <header class="sheet-header">
+          <h1 id="section-title">General</h1>
+          <button id="close-sheet" class="close-sheet" aria-label="Close"><span data-icon="xmark"></span></button>
+        </header>
+        <div id="section-body" class="section-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-backdrop" class="alert-backdrop hidden">
+    <div class="alert" role="alertdialog">
+      <img class="mark alert-mark" src="mark.svg" alt="">
+      <div id="alert-title" class="alert-title"></div>
+      <div id="alert-message" class="alert-message"></div>
+      <div class="alert-buttons">
+        <button id="alert-cancel" class="alert-button">Cancel</button>
+        <button id="alert-ok" class="alert-button destructive">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="menu" class="menu hidden"></div>
+
+  <script src="icons.js"></script>
+  <script src="humanize.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

@@ -22,21 +22,21 @@ pub struct Model {
 pub const MODELS: [Model; 3] = [
     Model {
         id: "base",
-        label: "Base (60 MB, fastest)",
+        label: "Base (74M, fast, ok quality)",
         file: "ggml-base-q5_1.bin",
         bytes: 59_707_625,
         sha256: "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
     },
     Model {
         id: "small",
-        label: "Small (190 MB)",
+        label: "Small (244M, balanced)",
         file: "ggml-small-q5_1.bin",
         bytes: 190_085_487,
         sha256: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
     },
     Model {
         id: "turbo",
-        label: "Large v3 Turbo (570 MB, most accurate)",
+        label: "Large v3 Turbo (~570MB, fast on a good PC, best quality)",
         file: "ggml-large-v3-turbo-q5_0.bin",
         bytes: 574_041_195,
         sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",

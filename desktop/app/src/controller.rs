@@ -43,6 +43,16 @@ pub struct Snapshot {
     pub history: Vec<HistoryEntry>,
     pub out_of_credits: bool,
     pub shortcut: String,
+    pub mode: crate::store::HotkeyMode,
+    pub download: Option<Download>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Download {
+    pub id: String,
+    pub done: u64,
+    pub total: u64,
 }
 
 pub struct Controller {
@@ -56,26 +66,52 @@ struct Inner {
     started: Option<Instant>,
     error: Option<String>,
     history: Vec<HistoryEntry>,
+    download: Option<Download>,
 }
 
 impl Controller {
     pub fn new() -> Self {
         Self {
             settings: Mutex::new(Settings::load()),
-            inner: Mutex::new(Inner { phase: Phase::Idle, recorder: None, started: None, error: None, history: History::load() }),
+            inner: Mutex::new(Inner { phase: Phase::Idle, recorder: None, started: None, error: None, history: History::load(), download: None }),
         }
     }
 
     pub fn snapshot(&self) -> Snapshot {
         let inner = self.inner.lock().unwrap();
+        let settings = self.settings.lock().unwrap();
         Snapshot {
+            mode: settings.mode,
+            download: inner.download.clone(),
             phase: inner.phase,
             title: inner.phase.title(),
             error: inner.error.clone(),
             history: inner.history.iter().take(4).cloned().collect(),
             out_of_credits: polish::OUT_OF_CREDITS.load(Ordering::Relaxed),
-            shortcut: self.settings.lock().unwrap().shortcut.clone(),
+            shortcut: settings.shortcut.clone(),
         }
+    }
+
+    pub fn history(&self) -> Vec<HistoryEntry> {
+        self.inner.lock().unwrap().history.clone()
+    }
+
+    pub fn edit_history(&self, app: &AppHandle, edit: impl FnOnce(&mut Vec<HistoryEntry>)) -> Vec<HistoryEntry> {
+        let entries = {
+            let mut inner = self.inner.lock().unwrap();
+            edit(&mut inner.history);
+            History::save(&inner.history);
+            inner.history.clone()
+        };
+        let _ = app.emit("history", &entries);
+        self.publish(app);
+        entries
+    }
+
+    pub fn set_download(&self, app: &AppHandle, download: Option<Download>) {
+        self.inner.lock().unwrap().download = download.clone();
+        let _ = app.emit("download", &download);
+        self.publish(app);
     }
 
     pub fn phase(&self) -> Phase {
@@ -95,11 +131,12 @@ impl Controller {
     fn fail(&self, app: &AppHandle, message: String) {
         {
             let mut inner = self.inner.lock().unwrap();
-            inner.error = Some(message);
+            inner.error = Some(message.clone());
             inner.phase = Phase::Idle;
         }
         crate::shell::phase_changed(app, Phase::Idle);
         self.publish(app);
+        notice(app, "error", &message);
     }
 
     pub fn start(&self, app: &AppHandle) {
@@ -111,7 +148,10 @@ impl Controller {
         if let Some(panel) = app.get_webview_window("panel") {
             let _ = panel.hide();
         }
-        match Recorder::start() {
+        let level_app = app.clone();
+        match Recorder::start(settings.microphone.clone(), move |level| {
+            let _ = level_app.emit_to("island", "level", level);
+        }) {
             Ok(recorder) => {
                 let mut inner = self.inner.lock().unwrap();
                 inner.recorder = Some(recorder);
@@ -172,6 +212,7 @@ impl Controller {
         let held_ms = started.map(|s| s.elapsed().as_millis() as u64).unwrap_or(0);
         if !audio::has_speech(&samples) {
             store::log("no-speech", &[("audioMs", json!(audio_ms))]);
+            notice(app, "info", if audio_ms < 400 { "No speech detected" } else { "Audio too quiet — check your microphone" });
             return Ok(());
         }
 
@@ -181,6 +222,7 @@ impl Controller {
         let heard = cleaner::strip_mid_text_farewells(&transcript::clean_special_tokens(&raw));
         if heard.is_empty() {
             store::log("no-speech", &[("audioMs", json!(audio_ms)), ("sttMs", json!(stt_ms))]);
+            notice(app, "info", "No speech detected");
             return Ok(());
         }
 
@@ -206,11 +248,13 @@ impl Controller {
         let text = cleaner::clean(&text);
 
         self.set_phase(app, Phase::Pasting);
-        let paste_result = paste::paste(&text);
-        {
-            let mut inner = self.inner.lock().unwrap();
-            History::push(&mut inner.history, &text);
-        }
+        let paste_result = if settings.paste { paste::paste(&text) } else { paste::copy(&text) };
+        self.edit_history(app, |entries| {
+            History::push(
+                entries,
+                HistoryEntry { text: text.clone(), audio_ms, stt_ms, polish_ms, ..Default::default() },
+            )
+        });
         store::log(
             "dictation",
             &[
@@ -224,6 +268,14 @@ impl Controller {
                 ("pasted", json!(paste_result.is_ok())),
             ],
         );
+        if paste_result.is_ok() {
+            let _ = app.emit_to("island", "metrics", json!({"audioMs": audio_ms, "sttMs": stt_ms, "polishMs": polish_ms}));
+        }
         paste_result.map_err(|e| format!("{e} The text is in the history; use Copy."))
     }
+}
+
+/// A 4-second message in the island ("No speech detected", errors).
+fn notice(app: &AppHandle, kind: &str, text: &str) {
+    let _ = app.emit_to("island", "notice", json!({"kind": kind, "text": text}));
 }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mimir Island</title>
+  <link rel="stylesheet" href="mac.css">
+  <link rel="stylesheet" href="island.css">
+</head>
+<body>
+  <!-- RecordingIsland.swift: one dark capsule, 36 high, bottom-centred. -->
+  <div id="pill" class="pill">
+    <div id="recording" class="row recording">
+      <button id="cancel" class="round cancel reveal left" title="Cancel (Esc)" aria-label="Cancel dictation"><span data-icon="xmark"></span></button>
+      <div class="inner">
+        <span class="rec-dot"></span>
+        <div id="wave" class="wave"></div>
+        <span id="timer" class="timer">0:00</span>
+      </div>
+      <button id="finish" class="round finish reveal right" title="Finish and paste" aria-label="Finish and paste"><span data-icon="check"></span></button>
+    </div>
+    <div id="processing" class="row processing hidden">
+      <span id="phase-label" class="phase-label">Transcribing</span>
+      <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+    </div>
+    <div id="notice" class="row notice hidden">
+      <span id="notice-icon" class="notice-icon"></span>
+      <span id="notice-text" class="notice-text"></span>
+    </div>
+    <div id="metrics" class="row metrics hidden"></div>
+  </div>
+  <script src="icons.js"></script>
+  <script src="island.js"></script>
+</body>
+</html>

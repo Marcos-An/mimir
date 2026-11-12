@@ -2,6 +2,12 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "What the panel and settings pages may call.",
-  "windows": ["panel", "settings"],
-  "permissions": ["core:default"]
+  "windows": [
+    "panel",
+    "main",
+    "island"
+  ],
+  "permissions": [
+    "core:default"
+  ]
 }

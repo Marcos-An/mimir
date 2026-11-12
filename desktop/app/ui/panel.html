@@ -4,29 +4,77 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mimir</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="mac.css">
+  <link rel="stylesheet" href="panel.css">
 </head>
 <body>
+  <!-- Same structure as MenuBarPanelView.swift: download, credits, header, latest, footer. -->
   <div class="panel">
-    <header>
-      <span id="dot" class="dot"></span>
-      <h1 id="title">Ready</h1>
-      <span class="muted small" id="hint"></span>
-    </header>
-    <div class="body">
-      <div id="credits" class="notice small hidden">
-        Your Anthropic account is out of credits. Dictations are pasted without cleanup and the writing check is paused until you add credits.
-        <a id="billing">Add credits</a>
+    <section id="download" class="download hidden">
+      <div class="download-top">
+        <span class="download-title">Downloading models</span>
+        <span id="download-pct" class="mono secondary">Starting…</span>
       </div>
-      <div id="error" class="notice small hidden"></div>
-      <div id="entries"></div>
-    </div>
-    <footer>
-      <button id="settings">Settings</button>
+      <div class="progress"><div id="download-bar" class="progress-fill"></div></div>
+      <div class="download-note secondary">One time only. Everything runs on this computer afterwards.</div>
+    </section>
+    <hr id="download-divider" class="divider hidden">
+
+    <section id="credits" class="credits hidden">
+      <svg class="credits-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="13" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 6h13" stroke="currentColor" stroke-width="1.5"/><path d="M11.5 9.2v2.2M11.5 12.9v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <div class="credits-body">
+        <div class="credits-title">Claude credits ran out</div>
+        <div class="credits-text secondary">Your Anthropic account is out of credits. Dictations are pasted without cleanup and the writing check is paused until you add credits.</div>
+        <a id="billing" class="link" href="#">Add credits</a>
+      </div>
+    </section>
+    <hr id="credits-divider" class="divider hidden">
+
+    <header class="header">
+      <div class="header-top">
+        <span id="dot" class="status-dot idle"></span>
+        <span id="status" class="status-text">Ready</span>
+        <span class="brand">Mimir</span>
+      </div>
+      <div class="header-hint">
+        <span id="verb" class="secondary">Tap</span>
+        <span id="shortcut" class="keycap"></span>
+        <span id="trail" class="secondary">to start/stop.</span>
+      </div>
+    </header>
+    <hr class="divider">
+
+    <section class="latest">
+      <div class="latest-head">
+        <span class="label">Latest text</span>
+        <button id="copy-latest" class="copy-latest hidden" aria-label="Copy latest text">
+          <span class="icon" data-icon="copy"></span><span class="copy-label">Copy</span>
+        </button>
+      </div>
+      <div id="latest-text" class="latest-text"></div>
+      <div id="earlier" class="hidden">
+        <hr class="divider inset">
+        <div class="label">Earlier</div>
+        <div id="recent" class="recent"></div>
+      </div>
+    </section>
+    <hr class="divider">
+
+    <footer class="footer">
+      <button id="open" class="footer-button">
+        <span class="icon" data-icon="windows"></span><span>Open Mimir</span>
+      </button>
       <span class="spacer"></span>
-      <button id="quit">Quit</button>
+      <button id="more" class="more" aria-label="More">
+        <span class="icon" data-icon="ellipsis"></span>
+      </button>
+      <div id="more-menu" class="menu hidden">
+        <button id="quit">Quit</button>
+      </div>
     </footer>
   </div>
+  <script src="icons.js"></script>
+  <script src="humanize.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

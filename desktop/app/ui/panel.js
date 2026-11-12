@@ -2,62 +2,97 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 
-function entry(item, latest) {
-  const box = document.createElement("div");
-  box.className = "entry " + (latest ? "latest" : "recent");
-  const text = document.createElement("p");
-  text.textContent = item.text;
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  const when = document.createElement("span");
-  when.className = "muted small";
-  when.textContent = item.at;
-  const copy = document.createElement("button");
-  copy.textContent = "Copy";
-  copy.addEventListener("click", async () => {
-    try {
-      await invoke("copy_text", { text: item.text });
-      copy.textContent = "Copied";
-      setTimeout(() => (copy.textContent = "Copy"), 1500);
-    } catch (e) {
-      copy.textContent = "Failed";
-    }
+
+
+const STATUS = { idle: "Ready", recording: "Recording", transcribing: "Transcribing", polishing: "Thinking", pasting: "Inserting" };
+let latestText = null;
+let copyTimer = null;
+
+function setCopyButton(copied) {
+  const button = $("copy-latest");
+  button.classList.toggle("copied", copied);
+  button.querySelector(".icon").innerHTML = MIMIR_ICONS[copied ? "check" : "copy"];
+  button.querySelector(".copy-label").textContent = copied ? "Copied" : "Copy";
+  button.setAttribute("aria-label", copied ? "Copied" : "Copy latest text");
+}
+
+function recentItem(entry) {
+  const item = document.createElement("button");
+  item.className = "recent-item";
+  item.title = "Click to copy";
+  item.innerHTML = `<span class="recent-date"></span><span class="recent-text"></span><span class="recent-icon">${MIMIR_ICONS.copy}</span>`;
+  item.querySelector(".recent-date").textContent = humanizedDate(entry.at);
+  item.querySelector(".recent-text").textContent = entry.text;
+  item.addEventListener("click", async () => {
+    await invoke("copy_text", { text: entry.text });
+    item.classList.add("copied");
+    item.querySelector(".recent-icon").innerHTML = MIMIR_ICONS.check;
+    setTimeout(() => {
+      item.classList.remove("copied");
+      item.querySelector(".recent-icon").innerHTML = MIMIR_ICONS.copy;
+    }, 1200);
   });
-  meta.append(when, copy);
-  box.append(text, meta);
-  return box;
+  return item;
 }
 
 function render(state) {
-  $("title").textContent = state.title;
-  const dot = $("dot");
-  dot.className = "dot" + (state.phase === "recording" ? " recording" : state.phase === "idle" ? "" : " busy");
-  $("hint").innerHTML = "";
-  if (state.phase === "recording") {
-    $("hint").innerHTML = "<kbd>Esc</kbd> cancels";
+  const error = state.error;
+  $("status").textContent = error ? `Error — ${error}` : STATUS[state.phase];
+  $("dot").className = "status-dot " + (error ? "error" : state.phase === "idle" ? "idle" : state.phase === "recording" ? "recording" : "busy");
+  const hold = state.mode === "hold";
+  $("verb").textContent = hold ? "Hold" : "Tap";
+  $("trail").textContent = hold ? "and speak." : "to start/stop.";
+  $("shortcut").textContent = state.shortcut;
+
+  const credits = state.outOfCredits;
+  $("credits").classList.toggle("hidden", !credits);
+  $("credits-divider").classList.toggle("hidden", !credits);
+
+  const download = state.download;
+  $("download").classList.toggle("hidden", !download);
+  $("download-divider").classList.toggle("hidden", !download);
+  if (download) {
+    const fraction = download.done / download.total;
+    $("download-pct").textContent = `${Math.floor(fraction * 100)}%`;
+    $("download-bar").style.width = `${fraction * 100}%`;
   }
-  $("credits").classList.toggle("hidden", !state.outOfCredits);
-  $("error").classList.toggle("hidden", !state.error);
-  $("error").textContent = state.error || "";
-  const list = $("entries");
-  list.replaceChildren();
-  if (state.history.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty muted";
-    const keys = state.shortcut.split("+").map((k) => `<kbd>${k}</kbd>`).join(" + ");
-    empty.innerHTML = `Press ${keys} anywhere, speak, and press it again.<br>The text is pasted where you are typing.`;
-    list.append(empty);
-  } else {
-    state.history.forEach((item, i) => list.append(entry(item, i === 0)));
-  }
+
+  const [latest, ...rest] = state.history;
+  latestText = latest ? latest.text : null;
+  $("copy-latest").classList.toggle("hidden", !latest);
+  const text = $("latest-text");
+  text.classList.toggle("placeholder", !latest);
+  text.textContent = latest ? latest.text : state.phase !== "idle" ? "Processing…" : "Say something to get started.";
+  $("earlier").classList.toggle("hidden", rest.length === 0);
+  $("recent").replaceChildren(...rest.slice(0, 3).map(recentItem));
 }
 
-$("settings").addEventListener("click", () => invoke("open_settings"));
+$("copy-latest").addEventListener("click", async () => {
+  if (latestText == null) return;
+  await invoke("copy_text", { text: latestText });
+  setCopyButton(true);
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => setCopyButton(false), 1500);
+});
+$("open").addEventListener("click", () => invoke("open_main"));
+$("billing").addEventListener("click", (e) => {
+  e.preventDefault();
+  invoke("open_billing");
+});
+$("more").addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("more-menu").classList.toggle("hidden");
+});
+document.addEventListener("click", () => $("more-menu").classList.add("hidden"));
 $("quit").addEventListener("click", () => invoke("quit"));
-$("billing").addEventListener("click", () => invoke("open_billing"));
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") invoke("hide_panel");
 });
+
+// The window fits the panel's height, like the Mac's anchored panel.
+new ResizeObserver(() => invoke("fit_panel", { height: document.querySelector(".panel").offsetHeight })).observe(
+  document.querySelector(".panel"),
+);
 
 listen("state", (event) => render(event.payload));
 invoke("get_state").then(render);
