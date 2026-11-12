@@ -113,6 +113,19 @@ pub fn show_main(app: &AppHandle, section: Option<&str>) {
         let _ = panel.hide();
     }
     if let Some(window) = app.get_webview_window("main") {
+        // Same as the Mac's dashboard: opens at 960x640 (smaller on a small
+        // screen), never below 720x460.
+        if !window.is_visible().unwrap_or(false) {
+            let (mut width, mut height) = (960.0, 640.0);
+            if let Ok(Some(monitor)) = window.current_monitor().or_else(|_| window.primary_monitor()) {
+                let area = monitor.work_area().size.to_logical::<f64>(monitor.scale_factor());
+                width = f64::min(width, area.width - 40.0).max(720.0);
+                height = f64::min(height, area.height - 40.0).max(460.0);
+            }
+            let _ = window.set_min_size(Some(tauri::LogicalSize::new(720.0, 460.0)));
+            let _ = window.set_size(tauri::LogicalSize::new(width, height));
+            let _ = window.center();
+        }
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
