@@ -4,6 +4,8 @@
 
 pub mod anthropic;
 pub mod cleaner;
+pub mod dictation;
 pub mod prompts;
+pub mod transcript;
 pub mod utf16;
 pub mod writing;

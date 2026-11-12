@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mimir</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="panel">
+    <header>
+      <span id="dot" class="dot"></span>
+      <h1 id="title">Ready</h1>
+      <span class="muted small" id="hint"></span>
+    </header>
+    <div class="body">
+      <div id="credits" class="notice small hidden">
+        Your Anthropic account is out of credits. Dictations are pasted without cleanup and the writing check is paused until you add credits.
+        <a id="billing">Add credits</a>
+      </div>
+      <div id="error" class="notice small hidden"></div>
+      <div id="entries"></div>
+    </div>
+    <footer>
+      <button id="settings">Settings</button>
+      <span class="spacer"></span>
+      <button id="quit">Quit</button>
+    </footer>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

@@ -43,6 +43,46 @@ jobs:
       - name: Swift tests for shared prompts and fixtures
         run: swift test --filter "SharedPromptTests|SharedFixtureTests"
 
+  # The Windows app: unit tests, the NSIS installer, and a self-test that
+  # downloads the base model and transcribes the bundled clip. On a tag
+  # desktop-v* or by hand, the installer goes to a prerelease for testers.
+  windows-app:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/desktop/ci/portable-cpu.cmake
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+      - run: cargo test -p mimir-app
+      - name: Build the installer
+        working-directory: desktop/app
+        run: cargo tauri build
+      - name: Self-test (download base model, transcribe the clip)
+        run: ./target/release/mimir.exe --self-test base
+      - name: Publish for testers
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/desktop-v') && github.ref_name || 'desktop-latest' }}
+          name: Mimir for Windows (test build)
+          prerelease: true
+          body: |
+            Test build of Mimir for Windows 10 and 11. It installs for your user only, without an admin password.
+            When Windows SmartScreen warns, click "More info", then "Run anyway". The app is not signed yet.
+            Mimir lives in the tray (bottom right, maybe under the ^ arrow). Settings opens on first launch so you can download the speech model.
+          files: desktop/target/release/bundle/nsis/*.exe
+
   # Spike tools for friends (phase 1): uia-probe.exe and stt-bench.exe on a
   # GitHub prerelease, downloadable without a login. Runs on a tag
   # desktop-probes-v* or by hand.
