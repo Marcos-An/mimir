@@ -26,15 +26,32 @@ public actor AnthropicPostProcessor: WarmableTextPostProcessing {
     /// `preload()`, que roda no início da gravação, escondendo qualquer prompt
     /// atrás do tempo de fala.
     private var cachedAPIKey: String?
+    private let apiKeyProvider: @Sendable () -> String?
 
     public init(
         modelID: String = AnthropicPostProcessor.defaultModelID,
         style: PostProcessingStyle = .cleanDictation,
         customVocabulary: String = ""
     ) {
+        self.init(modelID: modelID, style: style, customVocabulary: customVocabulary, session: nil, apiKeyProvider: { Self.resolveAPIKey() })
+    }
+
+    /// Tests inject a stubbed session and a fixed key (never the Keychain).
+    init(
+        modelID: String = AnthropicPostProcessor.defaultModelID,
+        style: PostProcessingStyle = .cleanDictation,
+        customVocabulary: String = "",
+        session: URLSession?,
+        apiKeyProvider: @escaping @Sendable () -> String?
+    ) {
         self.modelID = modelID
         self.style = style
         self.customVocabulary = customVocabulary
+        self.apiKeyProvider = apiKeyProvider
+        if let session {
+            self.session = session
+            return
+        }
         let configuration = URLSessionConfiguration.ephemeral
         // Ditado é interativo: melhor desistir cedo (e retentar numa conexão
         // nova, ver requestCompletion) do que segurar o paste atrás de um
@@ -105,19 +122,14 @@ public actor AnthropicPostProcessor: WarmableTextPostProcessing {
 
     private func resolveAndCacheAPIKey() -> String? {
         if let cachedAPIKey { return cachedAPIKey }
-        guard let key = Self.resolveAPIKey() else { return nil }
+        guard let key = apiKeyProvider() else { return nil }
         cachedAPIKey = key
         return key
     }
 
     /// Keychain primeiro; env var como escape hatch de desenvolvimento.
-    static func resolveAPIKey() -> String? {
-        if let key = KeychainStore.read(account: apiKeyAccount) { return key }
-        if let env = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"],
-           !env.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return env.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return nil
+    public static func resolveAPIKey() -> String? {
+        AnthropicAPIKey.resolve()
     }
 
     private func requestCompletion(
@@ -125,80 +137,23 @@ public actor AnthropicPostProcessor: WarmableTextPostProcessing {
         intent: PolishIntent,
         apiKey: String
     ) async throws -> String {
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-
         // Mesma heurística de teto do MLX: ~0.35 tok/char em pt-BR, 1.5× de folga.
         let approxInputTokens = max(100, Int(Double(transcript.count) * 0.35))
         let maxTokens = min(8192, max(300, Int(Double(approxInputTokens) * 1.5)))
-
-        var body: [String: Any] = [
-            "model": modelID,
-            "max_tokens": maxTokens,
-            "system": MLXPostProcessor.systemPrompt(for: intent, fallbackStyle: style, customVocabulary: customVocabulary),
-            "messages": [
-                [
-                    "role": "user",
-                    "content": MLXPostProcessor.userPrompt(for: transcript, intent: intent, fallbackStyle: style)
-                ]
-            ]
-        ]
-        if modelID.hasPrefix("claude-haiku-4") {
-            // Edição de ditado é tarefa de fidelidade, não de criatividade:
-            // temperature 1 (default) fazia o modelo "melhorar" o texto com
-            // estrutura e requisitos que o usuário não ditou.
-            body["temperature"] = 0
-        } else {
-            // Haiku 5.5 rejects non-default sampling values and thinks by
-            // default; cleanup needs no reasoning, and thinking only adds
-            // latency before the first word.
-            body["thinking"] = ["type": "disabled"]
-        }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let data: Data
-        let urlResponse: URLResponse
         do {
-            (data, urlResponse) = try await session.data(for: request)
-        } catch let error as URLError
-            where error.code == .timedOut
-                || error.code == .networkConnectionLost
-                || error.code == .cannotConnectToHost {
-            // Socket morto do pool: a segunda tentativa abre conexão nova e
-            // tipicamente resolve em ~1,5s. Uma única retentativa — se a rede
-            // está fora de verdade, o chamador cai no texto cru.
-            logger.warning("Retentando após \(error.code.rawValue, privacy: .public) (conexão possivelmente morta no pool).")
-            (data, urlResponse) = try await session.data(for: request)
+            // One retry after a dead pooled socket: a fresh connection usually
+            // answers in ~1.5 s. If the network is really down, the caller
+            // pastes the transcript as dictated.
+            return try await AnthropicClient(session: session).complete(
+                apiKey: apiKey,
+                model: modelID,
+                system: MLXPostProcessor.systemPrompt(for: intent, fallbackStyle: style, customVocabulary: customVocabulary),
+                messages: [.init(role: "user", content: MLXPostProcessor.userPrompt(for: transcript, intent: intent, fallbackStyle: style))],
+                maxTokens: maxTokens,
+                retries: 1
+            )
+        } catch let failure as AnthropicClient.Failure {
+            throw MimirError.postProcessingFailed("\(failure)")
         }
-        guard let http = urlResponse as? HTTPURLResponse else {
-            throw MimirError.postProcessingFailed("resposta não-HTTP")
-        }
-        guard http.statusCode == 200 else {
-            let snippet = String(data: data.prefix(300), encoding: .utf8) ?? ""
-            throw MimirError.postProcessingFailed("HTTP \(http.statusCode): \(snippet)")
-        }
-
-        guard
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let content = json["content"] as? [[String: Any]]
-        else {
-            throw MimirError.postProcessingFailed("payload inesperado")
-        }
-        // A declined request comes back as HTTP 200; the caller then pastes
-        // the transcript as dictated.
-        if (json["stop_reason"] as? String) == "refusal" {
-            throw MimirError.postProcessingFailed("refusal")
-        }
-        let text = content
-            .filter { ($0["type"] as? String) == "text" }
-            .compactMap { $0["text"] as? String }
-            .joined()
-        guard !text.isEmpty else {
-            throw MimirError.postProcessingFailed("resposta sem blocos de texto")
-        }
-        return text
     }
 }
