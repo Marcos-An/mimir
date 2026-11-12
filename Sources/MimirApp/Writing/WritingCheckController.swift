@@ -108,6 +108,9 @@ final class WritingCheckController {
     private var popupPanel: NSPanel?
     private var activeFinding: AnchoredFinding?
     private var pointerInPopup = false
+    /// No popup opens until then: right after an Apply the text shifts, and
+    /// the next underline lands under the pointer.
+    private var popupSuppressedUntil: Date = .distantPast
     private var hideWork: DispatchWorkItem?
 
     init(store: SettingsStore, model: MimirAppModel) {
@@ -531,6 +534,7 @@ final class WritingCheckController {
     }
 
     private func mouseMoved(to point: CGPoint) {
+        guard Date() >= popupSuppressedUntil else { return }
         if let dot = indicatorPanel, dot.isVisible, case .issues = indicator,
            dot.frame.insetBy(dx: -4, dy: -4).contains(point) {
             cancelHide()
@@ -609,18 +613,21 @@ final class WritingCheckController {
     }
 
     private func apply(_ finding: WritingFinding) {
+        // Close first, so the click shows at once: the write below talks to
+        // the app over Accessibility and Slack can take a second to answer.
+        closePopup()
+        let started = Date()
+        defer { finishApply(started: started) }
         guard let field,
               let source = FocusedTextReader.currentText(of: field),
               let applied = WritingAnchoring.applying(finding, to: source)
         else {
-            closePopup()
             return
         }
         // The edit is the user's choice: don't send the fixed sentence back.
         let fixedSentence = (finding.sentence as NSString).replacingOccurrences(of: finding.original, with: finding.replacement)
         scheduler.seedAsChecked(fixedSentence)
         let replaced = FocusedTextReader.replace(range: applied.range, with: finding.replacement, in: field, source: source, expected: applied.text)
-        closePopup()
         if !replaced {
             // The app refused the edit or typed it differently: say so on the
             // dot for 2 s instead of failing silently.
@@ -631,6 +638,22 @@ final class WritingCheckController {
             }
         }
         refresh()
+    }
+
+    /// Clicks made while the app was busy applying would otherwise land on
+    /// the next popup and apply fixes the user never chose: drop them, and
+    /// keep popups closed until the pointer settles.
+    private func finishApply(started: Date) {
+        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+        logger.notice("Apply took \(elapsed) ms")
+        if let marker = NSEvent.otherEvent(
+            with: .applicationDefined, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0,
+            context: nil, subtype: 0, data1: 0, data2: 0
+        ) {
+            NSApp.discardEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp], before: marker)
+        }
+        popupSuppressedUntil = Date().addingTimeInterval(0.6)
     }
 
     private func ignore(_ finding: WritingFinding) {
