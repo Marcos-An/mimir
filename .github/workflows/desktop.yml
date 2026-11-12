@@ -1,0 +1,79 @@
+name: desktop
+
+# Windows/Linux app (desktop/) and the prompts and fixtures it shares with the
+# Mac app (shared/). Free on a public repository.
+on:
+  push:
+    paths: ["desktop/**", "shared/**", "Sources/MimirCore/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "shared/**", "Sources/MimirCore/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - name: Prompts are LF on this checkout
+        shell: bash
+        run: "! grep -rl $'\\r' ../shared/prompts"
+      - run: cargo test -p mimir-core
+
+  # Editing shared/ for Windows must not silently change the Mac app.
+  mac-shared:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift tests for shared prompts and fixtures
+        run: swift test --filter "SharedPromptTests|SharedFixtureTests"
+
+  # Spike tools for friends (phase 1): uia-probe.exe and stt-bench.exe on a
+  # GitHub prerelease, downloadable without a login. Runs on a tag
+  # desktop-probes-v* or by hand.
+  probes:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/desktop-probes-v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      # Portable whisper.cpp build (AVX2 baseline), not tuned to the runner.
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/desktop/ci/portable-cpu.cmake
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - run: cargo build --release -p uia-probe -p stt-bench
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'desktop-probes-latest' }}
+          name: Mimir for Windows — test tools
+          prerelease: true
+          body: |
+            Two small test tools for the Windows version of Mimir. Neither one records, stores or uploads anything you type.
+            1. **stt-bench.exe** measures how fast speech-to-text runs on your PC. It downloads about 760 MB once. Send the lines that start with RESULT, plus the CPU line.
+            2. **uia-probe.exe** checks what Windows exposes in text fields. Click into a text box in Notepad, Chrome, Slack, Teams/Discord and Word/Outlook, and type a few words in each. Send the table it prints.
+            When Windows SmartScreen warns, click "More info", then "Run anyway". The tools are not signed.
+          files: |
+            desktop/target/release/uia-probe.exe
+            desktop/target/release/stt-bench.exe

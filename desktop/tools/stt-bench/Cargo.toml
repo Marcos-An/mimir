@@ -1,0 +1,10 @@
+[package]
+name = "stt-bench"
+version = "0.1.0"
+edition.workspace = true
+description = "Spike S2: how fast local Whisper (whisper.cpp) transcribes on this computer."
+
+[dependencies]
+whisper-rs = "0.14"
+hound = "3"
+ureq = "2"
