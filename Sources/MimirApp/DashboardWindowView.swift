@@ -10,21 +10,60 @@ struct DashboardWindowView: View {
     @State private var showSettings: Bool = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            JournalTopBar(
-                searchQuery: $searchQuery,
-                onSettings: { showSettings = true }
-            )
-
-            JournalView(
-                history: model.history,
-                shortcutLabel: store.settings.activationTrigger.label,
-                searchQuery: searchQuery
-            )
-        }
-        .background(MimirTheme.surface)
+        JournalView(
+            history: model.history,
+            shortcutCaps: store.settings.activationTrigger.keyCaps,
+            searchQuery: $searchQuery
+        )
+        .background(MimirIdentity.canvas)
+        .preferredColorScheme(.light)
+        .tint(MimirIdentity.brandBlue)
+        .toolbar { windowToolbar }
+        .toolbarBackground(MimirIdentity.canvas, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .sheet(isPresented: $showSettings) {
             SettingsSheetView(store: store, isPresented: $showSettings)
+                .preferredColorScheme(.light)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var windowToolbar: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            leadingItem.sharedBackgroundVisibility(.hidden)
+            trailingItem.sharedBackgroundVisibility(.hidden)
+        } else {
+            leadingItem
+            trailingItem
+        }
+    }
+
+    private var leadingItem: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            HStack(spacing: 16) {
+                MimirMark(height: 17)
+                    .padding(.leading, 4)
+                TranscriptionSearch(searchQuery: $searchQuery)
+            }
+        }
+    }
+
+    private var trailingItem: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            HStack(spacing: 14) {
+                ShortcutHint(caps: store.settings.activationTrigger.keyCaps)
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .foregroundStyle(MimirIdentity.secondaryInk)
+                .accessibilityLabel("Settings")
+                .help("Settings")
+            }
         }
     }
 }
@@ -44,133 +83,105 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: return "About"
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .general: return "slider.horizontal.3"
+        case .audio: return "mic"
+        case .pipeline: return "waveform.path"
+        case .permissions: return "checkmark.shield"
+        case .about: return "info.circle"
+        }
+    }
 }
 
-// MARK: - Top bar
+// MARK: - Toolbar pieces
 
-private struct JournalTopBar: View {
-    @Binding var searchQuery: String
-    let onSettings: () -> Void
-
-    @FocusState private var searchFocused: Bool
-    @State private var searchExpanded: Bool = false
+/// The "m" of the Mimir wordmark, cropped from the wordmark PDF so the mark and
+/// the full logo always come from the same drawing.
+private struct MimirMark: View {
+    var height: CGFloat = 17
 
     var body: some View {
-        HStack(spacing: 14) {
-            BrandMark()
-                .frame(width: 22, height: 22)
-            Text("Mimir")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(MimirTheme.ink)
-                .tracking(0.2)
-
-            Spacer()
-
-            searchField
-
-            Button(action: onSettings) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(MimirTheme.secondaryInk)
-                    .frame(width: 30, height: 30)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Settings")
+        let scale = height / 395
+        if let url = MimirResources.bundle.url(forResource: "MimirWordmark", withExtension: "pdf"),
+           let wordmark = NSImage(contentsOf: url) {
+            Image(nsImage: wordmark)
+                .resizable()
+                .renderingMode(.template)
+                .interpolation(.high)
+                .frame(width: 2172 * scale, height: 724 * scale)
+                .offset(x: -115 * scale, y: -210 * scale)
+                .frame(width: 640 * scale, height: 395 * scale, alignment: .topLeading)
+                .clipped()
+                .foregroundStyle(MimirIdentity.wordmark)
+                .accessibilityLabel("Mimir")
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .background(
-            MimirTheme.surface
-                .overlay(
-                    Rectangle()
-                        .fill(MimirTheme.hairline)
-                        .frame(height: 1),
-                    alignment: .bottom
-                )
-        )
     }
+}
 
-    private var searchField: some View {
+private struct TranscriptionSearch: View {
+    @Binding var searchQuery: String
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(searchFocused ? MimirTheme.ink : MimirTheme.secondaryInk)
-
-            if searchExpanded || !searchQuery.isEmpty || searchFocused {
-                ZStack(alignment: .leading) {
-                    if searchQuery.isEmpty {
-                        Text("Search the journal…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(MimirTheme.tertiaryInk)
-                    }
-                    TextField("", text: $searchQuery)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12))
-                        .foregroundStyle(MimirTheme.ink)
-                        .focused($searchFocused)
+                .font(.system(size: 12))
+                .foregroundStyle(MimirIdentity.secondaryInk)
+            TextField("Search transcriptions", text: $searchQuery,
+                      prompt: Text("Search transcriptions").foregroundStyle(MimirIdentity.secondaryInk))
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .accessibilityLabel("Search transcriptions")
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(MimirIdentity.secondaryInk)
                 }
-                .frame(width: 200)
-
-                if !searchQuery.isEmpty {
-                    Button {
-                        searchQuery = ""
-                        searchFocused = false
-                        searchExpanded = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(MimirTheme.secondaryInk)
-                    }
-                    .buttonStyle(.plain)
-                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            Capsule().fill(MimirTheme.surfaceSunken)
-        )
+        .font(.system(size: 13))
+        .foregroundStyle(MimirIdentity.ink)
+        .padding(.horizontal, 11)
+        .frame(width: 300, height: 32)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white))
         .overlay(
-            Capsule().stroke(
-                searchFocused ? MimirTheme.brandBlue.opacity(0.6) : MimirTheme.hairline,
-                lineWidth: 1
-            )
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(searchFocused ? MimirIdentity.brandBlue : Color.black.opacity(0.07), lineWidth: 1)
         )
-        .shadow(
-            color: searchFocused ? MimirTheme.brandBlue.opacity(0.18) : .clear,
-            radius: 6
-        )
-        .contentShape(Capsule())
-        .onTapGesture {
-            searchExpanded = true
-            searchFocused = true
-        }
-        .onChange(of: searchFocused) { _, focused in
-            if !focused && searchQuery.isEmpty {
-                searchExpanded = false
-            }
-        }
+        .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
     }
 }
 
-private struct BrandMark: View {
+private struct ShortcutHint: View {
+    let caps: [String]
+
     var body: some View {
-        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
-           let nsImage = NSImage(contentsOf: url) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-        } else {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(MimirTheme.brandGradient)
+        HStack(spacing: 7) {
+            Text(caps.joined(separator: " + "))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(MimirIdentity.ink)
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white))
                 .overlay(
-                    Image(systemName: "waveform")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
+            Text("to dictate")
+                .font(.system(size: 13))
+                .foregroundStyle(MimirIdentity.secondaryInk)
         }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -178,41 +189,45 @@ private struct BrandMark: View {
 
 private struct JournalView: View {
     @Bindable var history: TranscriptHistoryStore
-    let shortcutLabel: String
-    let searchQuery: String
+    let shortcutCaps: [String]
+    @Binding var searchQuery: String
 
     @State private var pendingDeleteID: UUID?
     @State private var showClearAlert = false
 
-    private var isSearching: Bool {
-        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private let columns = [
+        GridItem(.flexible(), spacing: 14, alignment: .top),
+        GridItem(.flexible(), spacing: 14, alignment: .top),
+    ]
+
+    private var trimmedQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var filtered: [TranscriptEntry] {
-        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let q = trimmedQuery.lowercased()
         guard !q.isEmpty else { return history.entries }
         return history.entries.filter { $0.text.lowercased().contains(q) }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                if !isSearching {
-                    if history.entries.isEmpty {
-                        WelcomeHero(shortcutLabel: shortcutLabel)
-                    } else {
-                        StatsHero(history: history, shortcutLabel: shortcutLabel)
-                    }
+            VStack(alignment: .leading, spacing: 30) {
+                if history.entries.isEmpty {
+                    WelcomeHero(shortcutCaps: shortcutCaps)
+                } else if !trimmedQuery.isEmpty {
+                    searchResults
+                } else {
+                    stream
                 }
-
-                streamSection
             }
-            .padding(.horizontal, 40)
-            .padding(.top, 32)
-            .padding(.bottom, 48)
-            .frame(maxWidth: 820, alignment: .leading)
+            .padding(.horizontal, 32)
+            .padding(.top, 12)
+            .padding(.bottom, 44)
+            .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .background(MimirIdentity.canvas)
         .alert("Delete this transcription?", isPresented: Binding(
             get: { pendingDeleteID != nil },
             set: { if !$0 { pendingDeleteID = nil } }
@@ -234,477 +249,344 @@ private struct JournalView: View {
     }
 
     @ViewBuilder
-    private var streamSection: some View {
-        if history.entries.isEmpty { EmptyView() }
-        else if isSearching && filtered.isEmpty {
-            searchEmptyState
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                streamHeader
-                LazyVStack(spacing: 0) {
-                    ForEach(filtered) { entry in
-                        QuoteCard(
-                            entry: entry,
-                            allEntries: history.entries,
-                            onDelete: { pendingDeleteID = entry.id }
-                        )
+    private var stream: some View {
+        let entries = history.entries
+        if let latest = entries.first {
+            card(latest, featured: true, dateStyle: .time)
+        }
+        ForEach(Self.dayGroups(Array(entries.dropFirst())), id: \.day) { group in
+            VStack(alignment: .leading, spacing: 14) {
+                GroupHeading(title: group.title, count: group.entries.count)
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                    ForEach(group.entries) { entry in
+                        card(entry, featured: false, dateStyle: .time)
+                    }
+                }
+            }
+        }
+        Button("Clear history…") { showClearAlert = true }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .font(.system(size: 12))
+            .foregroundStyle(MimirIdentity.secondaryInk)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        let results = filtered
+        VStack(alignment: .leading, spacing: 14) {
+            GroupHeading(title: "Results", count: results.count)
+            if results.isEmpty {
+                VStack(spacing: 6) {
+                    Text("Nothing matches “\(trimmedQuery)”.")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(MimirIdentity.ink)
+                    Text("Try fewer or different words.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(MimirIdentity.secondaryInk)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+            } else {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                    ForEach(results) { entry in
+                        card(entry, featured: false, dateStyle: .relative)
                     }
                 }
             }
         }
     }
 
-    private var streamHeader: some View {
-        HStack {
-            Text(isSearching ? "Results" : "Journal")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(MimirTheme.secondaryInk)
-                .kerning(1.4)
-            Spacer()
-            if !isSearching && !history.entries.isEmpty {
-                Button {
-                    showClearAlert = true
-                } label: {
-                    Text("Clear all")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(MimirTheme.red.opacity(0.85))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.bottom, 6)
+    private func card(_ entry: TranscriptEntry, featured: Bool, dateStyle: TranscriptCard.DateStyle) -> some View {
+        TranscriptCard(
+            entry: entry,
+            allEntries: history.entries,
+            isFeatured: featured,
+            dateStyle: dateStyle,
+            onDelete: { pendingDeleteID = entry.id }
+        )
     }
 
-    private var searchEmptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 28))
-                .foregroundStyle(MimirTheme.ink.opacity(0.2))
-            Text("Nothing here.")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(MimirTheme.ink)
-            Text("Try different terms.")
-                .font(.system(size: 12))
-                .foregroundStyle(MimirTheme.secondaryInk)
+    struct DayGroup {
+        let day: Date
+        let title: String
+        let entries: [TranscriptEntry]
+    }
+
+    static func dayGroups(_ entries: [TranscriptEntry]) -> [DayGroup] {
+        let calendar = Calendar.current
+        var order: [Date] = []
+        var buckets: [Date: [TranscriptEntry]] = [:]
+        for entry in entries {
+            let day = calendar.startOfDay(for: entry.createdAt)
+            if buckets[day] == nil { order.append(day) }
+            buckets[day, default: []].append(entry)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        return order.map { DayGroup(day: $0, title: dayTitle($0, calendar: calendar), entries: buckets[$0] ?? []) }
+    }
+
+    private static func dayTitle(_ day: Date, calendar: Calendar) -> String {
+        if calendar.isDateInToday(day) { return "Earlier today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        let today = calendar.startOfDay(for: Date())
+        if let days = calendar.dateComponents([.day], from: day, to: today).day, days < 7 {
+            formatter.dateFormat = "EEEE"
+        } else {
+            formatter.dateFormat = "MMMM d"
+        }
+        return formatter.string(from: day)
     }
 }
 
-// MARK: - Hero
+private struct GroupHeading: View {
+    let title: String
+    let count: Int
 
-private struct StatsHero: View {
-    @Bindable var history: TranscriptHistoryStore
-    let shortcutLabel: String
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title)
+                .font(.system(size: 19, weight: .medium, design: .serif))
+                .foregroundStyle(MimirIdentity.ink)
+            Text("\(count)")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(MimirIdentity.secondaryInk)
+        }
+        .padding(.top, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
 
-    private let ink = Color.white
-    private let dimInk = Color.white.opacity(0.72)
-    private let mutedInk = Color.white.opacity(0.5)
+// MARK: - Welcome
+
+private struct WelcomeHero: View {
+    let shortcutCaps: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            HStack(alignment: .center) {
-                Text(dateLabel.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(mutedInk)
-                    .kerning(1.6)
-                Spacer()
-                darkShortcutChip
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(greeting)
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(ink)
-                Text(summary)
-                    .font(.system(size: 15))
-                    .foregroundStyle(dimInk)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(alignment: .top, spacing: 0) {
-                statPill(number: "\(weekCount)", label: "dictations 7 days")
-                divider
-                statPill(number: "\(history.entries.count)", label: "total")
-                divider
-                statPill(number: "\(history.totalWords)", label: "words")
-                divider
-                statPill(number: formatDuration(history.totalSeconds), label: "speaking")
-                Spacer()
-            }
-            .padding(.top, 4)
-        }
-        .padding(28)
-        .background(heroBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 20, y: 10)
-    }
-
-    private var heroBackground: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(MimirTheme.surfaceRaised)
-            .overlay(
-                // Glow superior com as cores da marca, discreto.
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(
-                        RadialGradient(
-                            colors: [MimirTheme.accentCyan.opacity(0.22), Color.clear],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: 320
-                        )
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(
-                        RadialGradient(
-                            colors: [MimirTheme.accentPurple.opacity(0.18), Color.clear],
-                            center: .bottomTrailing,
-                            startRadius: 0,
-                            endRadius: 280
-                        )
-                    )
-            )
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.10))
-            .frame(width: 1, height: 32)
-            .padding(.horizontal, 22)
-    }
-
-    private var darkShortcutChip: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Text("SHORTCUT")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(mutedInk)
-                .kerning(1.2)
-            Text(shortcutLabel)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(ink)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                )
-        }
-    }
-
-    private var dateLabel: String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US")
-        f.dateFormat = "EEEE, MMMM d"
-        return f.string(from: Date())
-    }
-
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 0..<6: return "Late night."
-        case 6..<12: return "Good morning."
-        case 12..<18: return "Good afternoon."
-        default: return "Good evening."
-        }
-    }
-
-    private var summary: String {
-        if weekCount == 0 {
-            return "Nothing dictated in the last 7 days. Hit your shortcut in any app and speak a sentence — it'll feel instant."
-        } else if weekCount == 1 {
-            return "You dictated once this week. Keep the rhythm."
-        } else {
-            return "You dictated \(weekCount) times in the last 7 days. Good pace."
-        }
-    }
-
-    private var weekCount: Int {
-        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
-        return history.entries.filter { $0.createdAt >= cutoff }.count
-    }
-
-    private func statPill(number: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(number)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [MimirTheme.accentCyan, MimirTheme.accentPurple],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(mutedInk)
-                .kerning(0.8)
-        }
-    }
-
-    private func formatDuration(_ seconds: Double) -> String {
-        if seconds < 60 { return String(format: "%.0fs", seconds) }
-        if seconds < 3600 { return "\(Int(seconds / 60))m" }
-        return String(format: "%.1fh", seconds / 3600)
-    }
-}
-
-private extension Color {
-    init(hex: UInt64, alpha: Double = 1) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: alpha
-        )
-    }
-}
-
-private struct WelcomeHero: View {
-    let shortcutLabel: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .top) {
-                brandArt
-                Spacer()
-                ShortcutChip(label: shortcutLabel)
-            }
+            MimirMark(height: 30)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Speak, we're listening.")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(MimirTheme.ink)
-                Text("Hit your shortcut in any app, speak out loud and Mimir transcribes, polishes, and pastes it for you. All running locally — your audio never leaves the machine.")
+                    .font(.system(size: 32, weight: .medium, design: .serif))
+                    .foregroundStyle(MimirIdentity.ink)
+                Text("Use your shortcut in any app to turn speech into text. Audio stays on your Mac. Optional cloud polishing sends only the transcribed text.")
                     .font(.system(size: 15))
-                    .foregroundStyle(MimirTheme.secondaryInk)
+                    .foregroundStyle(MimirIdentity.secondaryInk)
                     .lineSpacing(4)
+                    .frame(maxWidth: 560, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 12) {
                 stepRow(number: "1", text: "Open any app where you type.")
-                stepRow(number: "2", text: "Press \(shortcutLabel) and speak normally.")
-                stepRow(number: "3", text: "Release. The polished text shows up in place.")
+                stepRow(number: "2", text: "Press \(shortcutCaps.joined(separator: " + ")) and speak normally.")
+                stepRow(number: "3", text: "Finish dictation to insert the text in your app.")
             }
-            .padding(.top, 4)
         }
-        .padding(30)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            MimirTheme.accentCyan.opacity(0.26),
-                            MimirTheme.accentPurple.opacity(0.16),
-                            Color.white.opacity(0)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
+        .padding(32)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.white))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(MimirTheme.hairline, lineWidth: 1)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
         )
-    }
-
-    private var brandArt: some View {
-        Group {
-            if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
-               let nsImage = NSImage(contentsOf: url) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(MimirTheme.brandGradient)
-                    .overlay(
-                        Image(systemName: "waveform")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-            }
-        }
-        .frame(width: 72, height: 72)
-        .shadow(color: MimirTheme.accentPurple.opacity(0.3), radius: 16, y: 8)
+        .padding(.top, 8)
     }
 
     private func stepRow(number: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(number)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(MimirTheme.brandGradient))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(MimirIdentity.brandBlue)
+                .frame(width: 14, alignment: .leading)
             Text(text)
                 .font(.system(size: 14))
-                .foregroundStyle(MimirTheme.ink)
+                .foregroundStyle(MimirIdentity.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
-private struct ShortcutChip: View {
-    let label: String
+// MARK: - Transcript card
 
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Text("SHORTCUT")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(MimirTheme.secondaryInk)
-                .kerning(1.2)
-            Text(label)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.black.opacity(0.55))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(MimirTheme.brandGradient, lineWidth: 1)
-                )
-        }
-    }
-}
+private struct TranscriptCard: View {
+    enum DateStyle { case time, relative }
 
-// MARK: - Quote card (entry in stream)
-
-private struct QuoteCard: View {
     let entry: TranscriptEntry
     let allEntries: [TranscriptEntry]
+    let isFeatured: Bool
+    let dateStyle: DateStyle
     let onDelete: () -> Void
 
     @State private var hovering = false
     @State private var copied = false
     @State private var expanded = false
     @State private var showingMetrics = false
+    @State private var canExpand = false
+
+    private var fontSize: CGFloat { isFeatured ? 18 : 15 }
+    private var maxLines: Int { isFeatured ? 6 : 4 }
+    private var radius: CGFloat { isFeatured ? 22 : 16 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: isFeatured ? 16 : 12) {
+            header
+
             Text(entry.text)
-                .font(.system(size: 17, weight: .regular, design: .serif))
-                .italic()
-                .foregroundStyle(MimirTheme.ink.opacity(0.92))
-                .lineSpacing(4)
-                .lineLimit(expanded ? nil : 4)
+                .font(.system(size: fontSize))
+                .foregroundStyle(MimirIdentity.ink)
+                .lineSpacing(isFeatured ? 5 : 3)
+                .lineLimit(expanded ? nil : maxLines)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                    canExpand = TranscriptTextLayout.isTruncated(entry.text, width: width, fontSize: fontSize, maxLines: maxLines)
+                }
 
-            HStack(spacing: 10) {
-                Rectangle()
-                    .fill(MimirTheme.brandGradient)
-                    .frame(width: 14, height: 1.5)
-                Text(humanizedDate(entry.createdAt))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(MimirTheme.secondaryInk)
-                if let duration = entry.durationSeconds {
-                    Text("·")
-                        .font(.system(size: 11))
-                        .foregroundStyle(MimirTheme.secondaryInk.opacity(0.6))
-                    Text(formatDuration(duration))
-                        .font(.system(size: 11))
-                        .foregroundStyle(MimirTheme.secondaryInk)
+            if canExpand || expanded {
+                Button(expanded ? "Show less" : "Show more") {
+                    withAnimation(.easeOut(duration: 0.18)) { expanded.toggle() }
                 }
-                if let metricsText = metricsLine, let metrics = entry.sessionMetrics {
-                    Text("·")
-                        .font(.system(size: 11))
-                        .foregroundStyle(MimirTheme.secondaryInk.opacity(0.6))
-                    Button {
-                        showingMetrics.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(metricsText)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundStyle(MimirTheme.secondaryInk)
-                            Image(systemName: "chart.bar.doc.horizontal")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(MimirTheme.secondaryInk.opacity(0.6))
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showingMetrics, arrowEdge: .bottom) {
-                        MetricsPopoverContent(
-                            entry: entry,
-                            metrics: metrics,
-                            allEntries: allEntries
-                        )
-                    }
-                }
-                Spacer()
-                actionCluster
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(MimirIdentity.brandBlue)
+                .accessibilityLabel(expanded ? "Collapse transcription" : "Expand transcription")
             }
         }
-        .padding(.vertical, 18)
-        .padding(.horizontal, 2)
-        .contentShape(Rectangle())
+        .padding(isFeatured ? 26 : 18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(background)
+        .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .onHover { hovering = $0 }
-        .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { expanded.toggle() } }
-        .overlay(
-            Rectangle()
-                .fill(MimirTheme.hairline)
-                .frame(height: 1),
-            alignment: .bottom
-        )
     }
 
-    private var metricsLine: String? {
-        guard let m = entry.sessionMetrics else { return nil }
-        var parts: [String] = []
-        parts.append("📝" + fmtSeconds(m.transcriptionSeconds))
-        if let post = m.postProcessingSeconds {
-            parts.append("✨" + fmtSeconds(post))
+    private var header: some View {
+        HStack(spacing: 10) {
+            if isFeatured {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(MimirIdentity.brandBlue)
+                        .frame(width: 6, height: 6)
+                    Text("Latest")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MimirIdentity.brandBlue)
+                }
+            }
+            Text(metaLine)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(MimirIdentity.secondaryInk)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            actionMenu
+            copyButton
         }
-        parts.append(m.streamingUsed ? "🔗" : "⚠︎")
-        return parts.joined(separator: " · ")
+        .popover(isPresented: $showingMetrics, arrowEdge: .bottom) {
+            if let metrics = entry.sessionMetrics {
+                MetricsPopoverContent(entry: entry, metrics: metrics, allEntries: allEntries)
+                    .preferredColorScheme(.light)
+            }
+        }
     }
 
-    private func fmtSeconds(_ seconds: TimeInterval) -> String {
-        DurationFormat.short(seconds)
+    private var metaLine: String {
+        let when: String
+        switch dateStyle {
+        case .time:
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            when = formatter.string(from: entry.createdAt)
+        case .relative:
+            when = humanizedDate(entry.createdAt)
+        }
+        guard let duration = entry.durationSeconds else { return when }
+        return "\(when) · \(Self.formatDuration(duration))"
     }
 
-    private var actionCluster: some View {
-        HStack(spacing: 2) {
+    private var actionMenu: some View {
+        Menu {
+            if entry.sessionMetrics != nil {
+                Button("Show metrics") {
+                    // Let the menu close before the popover opens.
+                    DispatchQueue.main.async { showingMetrics = true }
+                }
+            }
+            Button("Delete transcription", role: .destructive, action: onDelete)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(MimirIdentity.secondaryInk)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .pointerStyle(.link)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .opacity(hovering || isFeatured ? 1 : 0.6)
+        .accessibilityLabel("Transcription actions")
+    }
+
+    @ViewBuilder
+    private var copyButton: some View {
+        if isFeatured {
+            Button(action: copy) {
+                Text(copied ? "Copied" : "Copy")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: 28)
+                    .background(Capsule().fill(MimirIdentity.brandBlue))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .accessibilityLabel(copied ? "Copied" : "Copy transcription")
+        } else {
             Button(action: copy) {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(MimirTheme.secondaryInk)
+                    .foregroundStyle(copied ? MimirIdentity.brandBlue : MimirIdentity.secondaryInk)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .opacity(hovering || copied ? 1 : 0.6)
             .help(copied ? "Copied" : "Copy")
-
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(MimirTheme.red.opacity(0.8))
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Delete")
+            .accessibilityLabel(copied ? "Copied" : "Copy transcription")
         }
-        .opacity(hovering ? 1 : 0)
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if isFeatured {
+            shape
+                .fill(Color.white)
+                .overlay(
+                    RadialGradient(
+                        colors: [MimirIdentity.glow, MimirIdentity.glow.opacity(0)],
+                        center: .topTrailing,
+                        startRadius: 0,
+                        endRadius: 420
+                    )
+                    .clipShape(shape)
+                )
+                .overlay(shape.stroke(Color.black.opacity(0.06), lineWidth: 1))
+                .shadow(color: .black.opacity(0.05), radius: 18, y: 8)
+        } else {
+            shape
+                .fill(hovering ? Color.white : MimirIdentity.card)
+                .overlay(shape.stroke(Color.black.opacity(0.06), lineWidth: 1))
+                .shadow(color: .black.opacity(hovering ? 0.05 : 0.025), radius: hovering ? 10 : 4, y: 2)
+        }
     }
 
     private func copy() {
@@ -716,7 +598,7 @@ private struct QuoteCard: View {
         }
     }
 
-    private func formatDuration(_ seconds: Double) -> String {
+    private static func formatDuration(_ seconds: Double) -> String {
         if seconds < 60 { return String(format: "%.0fs", seconds) }
         let minutes = Int(seconds / 60)
         let remaining = Int(seconds) % 60
@@ -779,12 +661,12 @@ private struct MetricsPopoverContent: View {
     private var comparisonText: String {
         guard let r = currentRatio else { return "no reference duration" }
         guard let median = medianHistorical, !historicalRatios.isEmpty else {
-            return "first transcription · \(String(format: "%.0f", r * 100))% of the audio in latency"
+            return "first one, nothing to compare yet"
         }
         let delta = (r - median) / median * 100
         let n = historicalRatios.count
         if abs(delta) < 5 {
-            return "typical · matches the median of the last \(n)"
+            return "in line with the last \(n)"
         }
         let word = delta < 0 ? "faster" : "slower"
         return "\(Int(abs(delta)))% \(word) than the median of the last \(n)"
@@ -793,119 +675,90 @@ private struct MetricsPopoverContent: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             headerBar
+                .padding(.bottom, 14)
 
-            verdictCard
+            verdictBlock
+                .padding(.bottom, 18)
 
             breakdownSection
+                .padding(.bottom, 14)
 
-            Divider().opacity(0.3)
+            Rectangle().fill(Color.black.opacity(0.07)).frame(height: 1)
 
             disclosureButton
+                .padding(.top, 12)
 
             if showingTechnicalDetails {
                 technicalDetails
+                    .padding(.top, 14)
             }
         }
-        .padding(18)
+        .padding(20)
         .frame(width: 340)
+        .background(Color.white)
     }
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "chart.bar.doc.horizontal")
-                .font(.system(size: 13, weight: .semibold))
+        HStack(alignment: .firstTextBaseline) {
             Text("Telemetry")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(MimirIdentity.ink)
             Spacer()
             if let audio = recordingDuration {
                 Text("\(DurationFormat.short(audio)) audio")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(MimirIdentity.secondaryInk)
             }
         }
     }
 
-    // MARK: Verdict card
+    // MARK: Verdict
 
-    private var verdictCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                verdictBadge
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(DurationFormat.short(metrics.stopToPasteSeconds))
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    Text("stop→paste latency")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+    private var verdictBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(DurationFormat.short(metrics.stopToPasteSeconds))
+                    .font(.system(size: 34, weight: .medium, design: .serif))
+                    .foregroundStyle(MimirIdentity.ink)
+                Text(verdictLabel)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(verdictColor)
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(Capsule().fill(verdictColor.opacity(0.1)))
             }
-            Text(comparisonText)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Text("From stop to paste. \(comparisonText.prefix(1).uppercased() + comparisonText.dropFirst()).")
+                .font(.system(size: 12))
+                .foregroundStyle(MimirIdentity.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(verdictColor.opacity(0.12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(verdictColor.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-
-    private var verdictBadge: some View {
-        HStack(spacing: 6) {
-            Image(systemName: verdictIcon)
-                .font(.system(size: 11, weight: .bold))
-            Text(verdictLabel)
-                .font(.system(size: 10, weight: .bold))
-                .tracking(1.2)
-        }
-        .foregroundStyle(verdictColor)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule().fill(verdictColor.opacity(0.22))
-        )
     }
 
     private var verdictLabel: String {
         switch verdict {
-        case .fast: return "FAST"
-        case .normal: return "NORMAL"
-        case .slow: return "SLOW"
-        }
-    }
-
-    private var verdictIcon: String {
-        switch verdict {
-        case .fast: return "hare.fill"
-        case .normal: return "equal.circle.fill"
-        case .slow: return "tortoise.fill"
+        case .fast: return "Fast"
+        case .normal: return "Typical"
+        case .slow: return "Slow"
         }
     }
 
     private var verdictColor: Color {
         switch verdict {
-        case .fast: return .green
-        case .normal: return .blue
-        case .slow: return .orange
+        case .fast: return MimirTheme.green
+        case .normal: return MimirIdentity.secondaryInk
+        case .slow: return MimirTheme.orange
         }
     }
 
     // MARK: Breakdown
 
     private var breakdownSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("WHERE TIME WENT")
-                .font(.system(size: 9, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Where the time went")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(MimirIdentity.secondaryInk)
             breakdownBar
             legend
         }
@@ -913,9 +766,11 @@ private struct MetricsPopoverContent: View {
 
     private var breakdownSegments: [(label: String, seconds: Double, color: Color)] {
         var items: [(String, Double, Color)] = []
-        items.append(("Whisper", metrics.transcriptionSeconds, Color(red: 0.38, green: 0.66, blue: 0.98)))
-        if let p = metrics.postProcessingSeconds { items.append(("MLX", p, Color(red: 0.72, green: 0.58, blue: 1.0))) }
-        if let i = metrics.insertionSeconds { items.append(("Paste", i, Color(red: 0.95, green: 0.80, blue: 0.40))) }
+        items.append(("Whisper", metrics.transcriptionSeconds, MimirIdentity.brandBlue))
+        // "Polish" e não o nome do provider: a métrica é da sessão passada e o
+        // provider das settings pode ter mudado desde então.
+        if let p = metrics.postProcessingSeconds { items.append(("Polish", p, MimirIdentity.brandBlue.opacity(0.4))) }
+        if let i = metrics.insertionSeconds { items.append(("Paste", i, Color(red: 199 / 255, green: 199 / 255, blue: 204 / 255))) }
         return items.filter { $0.1 > 0 }
     }
 
@@ -930,24 +785,27 @@ private struct MetricsPopoverContent: View {
                 }
             }
         }
-        .frame(height: 10)
+        .frame(height: 8)
     }
 
     private var legend: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             ForEach(Array(breakdownSegments.enumerated()), id: \.offset) { _, segment in
                 HStack(spacing: 8) {
-                    Circle().fill(segment.color).frame(width: 8, height: 8)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(segment.color)
+                        .frame(width: 8, height: 8)
                     Text(segment.label)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(MimirIdentity.ink)
                     Spacer()
                     Text(DurationFormat.short(segment.seconds))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    Text(String(format: "(%.0f%%)", segment.seconds / metrics.stopToPasteSeconds * 100))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 46, alignment: .trailing)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(MimirIdentity.ink)
+                    Text(String(format: "%.0f%%", segment.seconds / metrics.stopToPasteSeconds * 100))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(MimirIdentity.secondaryInk)
+                        .frame(width: 40, alignment: .trailing)
                 }
             }
         }
@@ -968,19 +826,20 @@ private struct MetricsPopoverContent: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: showingTechnicalDetails ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9, weight: .semibold))
                 Text(showingTechnicalDetails ? "Hide technical details" : "Technical details")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12))
                 Spacer()
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(MimirIdentity.secondaryInk)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
     }
 
     private var technicalDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             whisperSection
             streamingSection
         }
@@ -988,7 +847,7 @@ private struct MetricsPopoverContent: View {
 
     private var whisperSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionTitle("WHISPER")
+            sectionTitle("Whisper")
             if let rtf = metrics.whisperRTF {
                 row("Real-time factor", String(format: "%.2f×", rtf))
             }
@@ -1003,17 +862,17 @@ private struct MetricsPopoverContent: View {
 
     private var streamingSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionTitle("STREAMING & COMMITS")
+            sectionTitle("Segments")
             row("Status",
-                value: metrics.streamingUsed ? "🔗 active" : "⚠︎ fallback",
-                valueColor: metrics.streamingUsed ? .green : .yellow)
+                value: metrics.streamingUsed ? "Segmented" : "Whole file",
+                valueColor: metrics.streamingUsed ? MimirTheme.green : MimirTheme.orange)
             if let reason = metrics.fallbackReason {
-                row("Reason", value: reason, valueColor: .yellow)
+                row("Reason", value: reason, valueColor: MimirTheme.orange)
             }
             if metrics.streamingCommitCount > 0 || metrics.incrementalAttemptCount > 0 {
-                row("Commits", "\(metrics.streamingCommitCount) of \(metrics.incrementalAttemptCount) attempts")
+                row("Segments", "\(metrics.streamingCommitCount) of \(metrics.incrementalAttemptCount) attempts")
                 if let avg = metrics.streamingAvgCommitSeconds {
-                    row("Avg per commit", DurationFormat.short(avg))
+                    row("Avg per segment", DurationFormat.short(avg))
                 }
             }
             if let cov = metrics.streamingCoverageRatio {
@@ -1024,17 +883,17 @@ private struct MetricsPopoverContent: View {
             if let tail = metrics.tailAudioSeconds {
                 row("Tail after stop", value: DurationFormat.short(tail), valueColor: tailColor(tail))
             } else {
-                row("Tail after stop", value: "—", valueColor: .secondary)
+                row("Tail after stop", value: "—", valueColor: MimirIdentity.secondaryInk)
             }
-            row("Empty chunks", value: "\(metrics.incrementalEmptyResultCount)", valueColor: .secondary)
+            row("Empty segments", value: "\(metrics.incrementalEmptyResultCount)", valueColor: MimirIdentity.secondaryInk)
             row(
                 "Errors",
                 value: "\(metrics.incrementalErrorCount)",
-                valueColor: metrics.incrementalErrorCount > 0 ? .red : .secondary)
+                valueColor: metrics.incrementalErrorCount > 0 ? MimirTheme.red : MimirIdentity.secondaryInk)
             if let lastError = metrics.lastIncrementalError, !lastError.isEmpty {
-                row("Last error", value: shortError(lastError), valueColor: .red)
+                row("Last error", value: shortError(lastError), valueColor: MimirTheme.red)
             } else {
-                row("Last error", value: "none", valueColor: .secondary)
+                row("Last error", value: "none", valueColor: MimirIdentity.secondaryInk)
             }
         }
     }
@@ -1043,31 +902,23 @@ private struct MetricsPopoverContent: View {
 
     private func sectionTitle(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .bold))
-            .tracking(1.2)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(MimirIdentity.ink)
+            .padding(.bottom, 2)
     }
 
     private func row(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary)
-        }
+        row(label, value: value, valueColor: MimirIdentity.ink)
     }
 
     private func row(_ label: String, value: String, valueColor: Color) -> some View {
         HStack(alignment: .top) {
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(MimirIdentity.secondaryInk)
             Spacer()
             Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(valueColor)
                 .lineLimit(2)
                 .multilineTextAlignment(.trailing)
@@ -1076,17 +927,17 @@ private struct MetricsPopoverContent: View {
 
     private func coverageColor(_ ratio: Double) -> Color {
         switch ratio {
-        case ..<0.4: return .red
-        case ..<0.75: return .orange
-        default: return .green
+        case ..<0.4: return MimirTheme.red
+        case ..<0.75: return MimirTheme.orange
+        default: return MimirTheme.green
         }
     }
 
     private func tailColor(_ seconds: Double) -> Color {
         switch seconds {
-        case ..<8: return .green
-        case ..<15: return .orange
-        default: return .red
+        case ..<8: return MimirTheme.green
+        case ..<15: return MimirTheme.orange
+        default: return MimirTheme.red
         }
     }
 
@@ -1102,96 +953,109 @@ private struct SettingsSheetView: View {
     @Bindable var store: SettingsStore
     @Binding var isPresented: Bool
     @State private var selected: SettingsSection = .general
+    @State private var confirmRestore = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            tabs
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+        HStack(spacing: 0) {
+            sidebar
+            Rectangle().fill(MimirTheme.hairline).frame(width: 1)
+            VStack(spacing: 0) {
+                header
+                Rectangle().fill(MimirTheme.hairline).frame(height: 1)
+                ScrollView {
                     SettingsSectionsRouter(store: store, selectedID: selected.rawValue)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 24)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(width: 640, height: 580)
-        .background(MimirTheme.surface)
+        .frame(width: 820, height: 600)
+        .background(Color.white)
+        .alert("Restore default settings?", isPresented: $confirmRestore) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restore", role: .destructive) { store.reset() }
+        } message: {
+            Text("Shortcuts, models, and preferences go back to their defaults. Your history is kept.")
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsSection.allCases) { section in
+                sidebarRow(section)
+            }
+            Spacer(minLength: 0)
+            Button("Restore defaults") { confirmRestore = true }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .font(.system(size: 12))
+                .foregroundStyle(MimirTheme.tertiaryInk)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 20)
+        .padding(.bottom, 16)
+        .frame(width: 220)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(red: 250 / 255, green: 250 / 255, blue: 251 / 255))
+    }
+
+    private func sidebarRow(_ section: SettingsSection) -> some View {
+        let isSelected = selected == section
+        return Button {
+            selected = section
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? MimirTheme.ink : MimirTheme.secondaryInk)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(isSelected ? Color.white : Color.clear)
+                            .shadow(color: .black.opacity(isSelected ? 0.08 : 0), radius: 2, y: 1)
+                    )
+                Text(section.title)
+                    .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected ? MimirTheme.ink : MimirTheme.secondaryInk)
+                Spacer(minLength: 0)
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? MimirTheme.softFill : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Settings")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(MimirTheme.ink)
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(MimirTheme.secondaryInk)
-            }
+        HStack {
+            Text(selected.title)
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(MimirTheme.ink)
             Spacer()
             Button {
                 isPresented = false
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(MimirTheme.secondaryInk)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30)
                     .background(Circle().fill(MimirTheme.softFill))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel("Close settings")
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 22)
-        .padding(.bottom, 16)
-    }
-
-    private var tabs: some View {
-        HStack(spacing: 6) {
-            ForEach(SettingsSection.allCases) { section in
-                tabButton(for: section)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func tabButton(for section: SettingsSection) -> some View {
-        let isSelected = selected == section
-        return Button {
-            selected = section
-        } label: {
-            Text(section.title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white : MimirTheme.ink)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(
-                    Group {
-                        if isSelected {
-                            Capsule().fill(MimirTheme.brandGradient)
-                        } else {
-                            Capsule().fill(MimirTheme.softFill)
-                        }
-                    }
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var subtitle: String {
-        switch selected {
-        case .general: return "Global shortcut, activation mode, and language."
-        case .audio: return "Microphone input used by Mimir."
-        case .pipeline: return "Transcription, post-processing, and insertion."
-        case .permissions: return "Permissions needed for the global shortcut to work."
-        case .about: return "About Mimir."
-        }
+        .padding(.horizontal, 28)
+        .frame(height: 68)
     }
 }
 
@@ -1200,22 +1064,18 @@ struct SettingsSectionsRouter: View {
     let selectedID: String
 
     var body: some View {
-        let overlay = SettingsOverlay(
-            store: store,
-            selectedItemID: .constant(selectedID),
-            isPresented: .constant(true)
-        )
+        let sections = SettingsSections(store: store)
         switch selectedID {
         case "audio":
-            overlay.audioSection
+            sections.audioSection
         case "pipeline":
-            overlay.pipelineSection
+            sections.pipelineSection
         case "permissions":
-            overlay.permissionsSection
+            sections.permissionsSection
         case "about":
-            overlay.aboutSection
+            sections.aboutSection
         default:
-            overlay.generalSection
+            sections.generalSection
         }
     }
 }

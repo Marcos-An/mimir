@@ -1,5 +1,6 @@
 import AppKit
 import MimirCore
+import Observation
 
 extension Notification.Name {
     static let keyBindingRecordingStarted = Notification.Name("mimir.keyBinding.recordingStarted")
@@ -33,17 +34,24 @@ final class GlobalHotkeyMonitor {
     private var pendingPrefixTrigger: TriggerSpec?
     private var pendingStartTask: Task<Void, Never>?
 
+    /// Durante a gravação, um tap de ⌥ sozinho (down→up sem outra tecla no
+    /// meio) para a gravação e envia — espelho do Esc, que cancela. Armado no
+    /// ⌥-down com sessão ativa; qualquer outra tecla ou modificador no meio
+    /// (⌥Space, ⌥T…) desarma, porque aí o ⌥ era parte de um combo.
+    private var pendingSendOnOptionRelease = false
+
+    /// Consumes Esc while recording so it doesn't also hit the front app.
+    private var escapeInterceptor: EscapeKeyInterceptor?
+
     init(
         dictationTrigger: KeyBinding,
         promptRewriteTrigger: KeyBinding,
-        hermesTrigger: KeyBinding,
         mode: ActivationMode,
         model: MimirAppModel
     ) {
         self.triggers = [
             TriggerSpec(binding: dictationTrigger, mode: .dictation),
-            TriggerSpec(binding: promptRewriteTrigger, mode: .promptRewrite),
-            TriggerSpec(binding: hermesTrigger, mode: .hermes)
+            TriggerSpec(binding: promptRewriteTrigger, mode: .promptRewrite)
         ]
         self.mode = mode
         self.model = model
@@ -63,15 +71,33 @@ final class GlobalHotkeyMonitor {
     private func pause() {
         guard !isPaused else { return }
         cancelPendingPrefix()
+        pendingSendOnOptionRelease = false
         if activeTrigger != nil && mode == .holdToTalk {
             Task { try? await model.stopDictation() }
         }
         activeTrigger = nil
         isPaused = true
+        syncEscapeInterceptor()
     }
 
     private func resume() {
         isPaused = false
+        syncEscapeInterceptor()
+    }
+
+    private func observePhase() {
+        withObservationTracking {
+            _ = model.phase
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.syncEscapeInterceptor()
+                self?.observePhase()
+            }
+        }
+    }
+
+    private func syncEscapeInterceptor() {
+        escapeInterceptor?.setEnabled(model.phase == .recording && !isPaused)
     }
 
     func updateDictationTrigger(_ newTrigger: KeyBinding) {
@@ -80,10 +106,6 @@ final class GlobalHotkeyMonitor {
 
     func updatePromptRewriteTrigger(_ newTrigger: KeyBinding) {
         updateActivationTrigger(newTrigger, atMode: .promptRewrite)
-    }
-
-    func updateHermesTrigger(_ newTrigger: KeyBinding) {
-        updateActivationTrigger(newTrigger, atMode: .hermes)
     }
 
     private func updateActivationTrigger(_ newTrigger: KeyBinding, atMode dictationMode: DictationMode) {
@@ -116,6 +138,13 @@ final class GlobalHotkeyMonitor {
     private func installMonitors() {
         _ = PermissionCoordinator.isInputMonitoringGranted
         _ = PermissionCoordinator.isAccessibilityGranted
+
+        escapeInterceptor = EscapeKeyInterceptor { [weak self] in
+            guard let self, !self.isPaused, self.model.phase == .recording else { return }
+            Task { try? await self.model.cancelDictation() }
+        }
+        observePhase()
+        syncEscapeInterceptor()
 
         globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             Task { @MainActor [weak self] in await self?.handleFlags(event: event) }
@@ -150,11 +179,18 @@ final class GlobalHotkeyMonitor {
         if isPaused { return }
         guard event.keyCode == 53 else { return }
         guard model.phase == .recording else { return }
+        // The event tap already cancelled on this keypress.
+        if let interceptor = escapeInterceptor,
+           interceptor.isEnabled || abs(interceptor.lastHandledTimestamp - event.timestamp) < 0.05 {
+            return
+        }
         try? await model.cancelDictation()
     }
 
     private func handleFlags(event: NSEvent) async {
         if isPaused { return }
+
+        await handleOptionSendGesture(event: event)
 
         for spec in triggers {
             let binding = spec.binding
@@ -170,8 +206,34 @@ final class GlobalHotkeyMonitor {
         }
     }
 
+    /// Tap de ⌥ sozinho durante a gravação → para e envia. Armado quando o
+    /// evento de flags é exatamente ⌥ com sessão gravando; disparado quando os
+    /// modificadores zeram sem nenhuma tecla no meio. `handleKey` desarma em
+    /// qualquer keyDown (⌥ era prefixo de combo, não o gesto de envio).
+    private func handleOptionSendGesture(event: NSEvent) async {
+        let independent = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting(.capsLock)
+        if independent == .option {
+            // A modifier-only ⌥ trigger already stops on its own tap; arming the
+            // gesture too would send a second stop for the same keypress.
+            let isTriggerKey = triggers.contains {
+                $0.binding.isModifierOnly && $0.binding.keyCode == event.keyCode
+            }
+            pendingSendOnOptionRelease = !isTriggerKey && model.phase == .recording
+        } else if independent.isEmpty {
+            guard pendingSendOnOptionRelease else { return }
+            pendingSendOnOptionRelease = false
+            guard model.phase == .recording else { return }
+            try? await model.stopDictation()
+        } else {
+            pendingSendOnOptionRelease = false
+        }
+    }
+
     private func handleKey(event: NSEvent, isDown: Bool) async {
         if isPaused { return }
+        if isDown { pendingSendOnOptionRelease = false }
 
         for spec in triggers {
             let binding = spec.binding
@@ -215,8 +277,11 @@ final class GlobalHotkeyMonitor {
             activeTrigger = spec
             await fireStart(mode: spec.mode)
         } else {
-            // Release: se havia um fire pendente pro prefixo, flush agora
-            // (user reconheceu a intenção soltando rapidamente).
+            // Release:
+            // - tap-to-toggle + pending: o usuário soltou sem completar combo.
+            //   Confirmou a intenção do modifier sozinho — flush e toggla.
+            // - hold-to-talk + pending: o timer pode já ter disparado fireStart;
+            //   se chegou aqui antes do timer, foi tap rápido — start+stop curto.
             if pendingPrefixTrigger == spec {
                 cancelPendingPrefix()
                 activeTrigger = spec
@@ -231,6 +296,13 @@ final class GlobalHotkeyMonitor {
     private func schedulePrefixFire(_ spec: TriggerSpec) {
         cancelPendingPrefix()
         pendingPrefixTrigger = spec
+        // Tap-to-toggle: sem timer. O fire só acontece no release se nenhum
+        // combo foi completado nesse meio-tempo — isso dá ao usuário tempo
+        // ilimitado pra completar ⌥+T, ⌥+Space etc., mas mantém o modifier
+        // sozinho funcional como atalho de dictation.
+        // Hold-to-talk: timer curto pra abrir margem ao combo antes de iniciar
+        // a gravação. Sem o timer, "press to talk" não funcionaria.
+        guard mode == .holdToTalk else { return }
         pendingStartTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: GlobalHotkeyMonitor.prefixGraceNanoseconds)
             guard !Task.isCancelled else { return }
@@ -250,23 +322,24 @@ final class GlobalHotkeyMonitor {
 
     /// Um binding é "prefixo" de outro quando ele é só um modificador e algum
     /// trigger configurado usa esse modificador combinado com outra tecla.
-    /// Exemplo: Right ⌥ é prefixo de Right ⌥ + Space.
+    /// Exemplo: Right ⌥ é prefixo de ⌥+Space.
     private func isPrefixOfAnotherTrigger(_ binding: KeyBinding) -> Bool {
+        let otherBindings = triggers.map(\.binding)
         if binding.isModifierOnly {
             let bit = Self.deviceIndependentModifierBit(forKeyCode: binding.keyCode)
             guard bit != 0 else { return false }
-            return triggers.contains { other in
-                guard other.binding != binding else { return false }
-                guard !other.binding.isModifierOnly, !other.binding.isModifierCombo else { return false }
-                return (other.binding.modifiers & bit) != 0
+            return otherBindings.contains { other in
+                guard other != binding else { return false }
+                guard !other.isModifierOnly, !other.isModifierCombo else { return false }
+                return (other.modifiers & bit) != 0
             }
         }
         if binding.isModifierCombo {
             let selfMods = binding.modifiers & NSEvent.ModifierFlags.deviceIndependentFlagsMask.rawValue
-            return triggers.contains { other in
-                guard other.binding != binding else { return false }
-                guard !other.binding.isModifierOnly, !other.binding.isModifierCombo else { return false }
-                let otherMods = other.binding.modifiers & NSEvent.ModifierFlags.deviceIndependentFlagsMask.rawValue
+            return otherBindings.contains { other in
+                guard other != binding else { return false }
+                guard !other.isModifierOnly, !other.isModifierCombo else { return false }
+                let otherMods = other.modifiers & NSEvent.ModifierFlags.deviceIndependentFlagsMask.rawValue
                 return (otherMods & selfMods) == selfMods
             }
         }

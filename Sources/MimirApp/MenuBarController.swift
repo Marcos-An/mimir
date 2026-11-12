@@ -131,7 +131,7 @@ final class MenuBarController: NSObject {
             img.isTemplate = true
             return img
         }()
-        guard let url = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png"),
+        guard let url = MimirResources.bundle.url(forResource: "MenuBarIcon", withExtension: "png"),
               let source = NSImage(contentsOf: url) else {
             return fallback
         }
@@ -172,7 +172,10 @@ final class MenuBarController: NSObject {
             return
         }
         if let popover, popover.isShown {
+            // Toggle de verdade: fechar e sair. Sem o return o `show()` abaixo
+            // reabria na hora e o popover nunca fechava.
             close()
+            return
         }
         if let value = note.userInfo?["anchor"] as? NSValue {
             showAnchoredPanel(anchor: value.rectValue)
@@ -184,6 +187,10 @@ final class MenuBarController: NSObject {
 
     func show() {
         guard let popover, let button = statusItem?.button else { return }
+        // O popover é `.transient` e pode fechar sozinho sem passar por
+        // `close()`. Sem remover o monitor anterior aqui, cada `show()` vazaria
+        // um monitor global que segue rodando `close()` a cada clique.
+        removeEventMonitor()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
 
@@ -194,10 +201,13 @@ final class MenuBarController: NSObject {
 
     func close() {
         popover?.performClose(nil)
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-            self.eventMonitor = nil
-        }
+        removeEventMonitor()
+    }
+
+    private func removeEventMonitor() {
+        guard let eventMonitor else { return }
+        NSEvent.removeMonitor(eventMonitor)
+        self.eventMonitor = nil
     }
 
     // MARK: - Painel ancorado (clique vindo do mbar com coords da pill)

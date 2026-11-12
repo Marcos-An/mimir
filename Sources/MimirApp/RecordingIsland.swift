@@ -3,12 +3,22 @@ import Observation
 import SwiftUI
 import MimirCore
 
+/// Drives the island's appear and disappear animation. The panel stays in
+/// place; the pill inside it scales and fades.
+@MainActor
+@Observable
+final class IslandPresentation {
+    var isVisible = false
+}
+
 @MainActor
 final class RecordingIslandController {
     private var panel: NSPanel?
     private let model: MimirAppModel
     private let levelMonitor: AudioLevelMonitor
     private let downloadMonitor: ModelDownloadMonitor
+    private let presentation = IslandPresentation()
+    private var pendingOrderOut: DispatchWorkItem?
 
     init(
         model: MimirAppModel,
@@ -25,7 +35,7 @@ final class RecordingIslandController {
         withObservationTracking {
             _ = model.phase
             _ = model.isFlashingMetrics
-            _ = model.partialPolishText
+            _ = model.sessionNotice
             _ = downloadMonitor.isActive
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
@@ -45,7 +55,9 @@ final class RecordingIslandController {
         case .recording, .transcribing, .postProcessing, .inserting:
             show()
         default:
-            if model.isFlashingMetrics {
+            // Um aviso pendente (falha ou "sem fala") mantém a ilha visível:
+            // antes ela desaparecia e o usuário não sabia o que aconteceu.
+            if model.isFlashingMetrics || model.sessionNotice != nil {
                 show()
             } else {
                 hide()
@@ -53,31 +65,20 @@ final class RecordingIslandController {
         }
     }
 
-    private static let baseSize = NSSize(width: 208, height: 44)
-    private static let metricsSize = NSSize(width: 300, height: 44)
-    private static let previewSize = NSSize(width: 420, height: 56)
-
-    private var targetSize: NSSize {
-        if model.phase == .idle && model.isFlashingMetrics {
-            return Self.metricsSize
-        }
-        if model.phase == .postProcessing && (model.partialPolishText?.isEmpty == false) {
-            return Self.previewSize
-        }
-        return Self.baseSize
-    }
-
     func show() {
+        pendingOrderOut?.cancel()
+        pendingOrderOut = nil
+
         if panel == nil {
             let hosting = NSHostingController(
                 rootView: RecordingIslandView(
                     model: model,
                     levelMonitor: levelMonitor,
-                    downloadMonitor: downloadMonitor
+                    presentation: presentation
                 )
             )
             let panel = NSPanel(
-                contentRect: NSRect(origin: .zero, size: Self.baseSize),
+                contentRect: NSRect(origin: .zero, size: RecordingIslandMetrics.panel),
                 styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
@@ -91,18 +92,37 @@ final class RecordingIslandController {
             panel.isMovableByWindowBackground = true
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
             panel.contentViewController = hosting
-            panel.setContentSize(Self.baseSize)
+            panel.setContentSize(RecordingIslandMetrics.panel)
             self.panel = panel
         }
-        if let panel {
-            panel.setContentSize(targetSize)
+        guard let panel else { return }
+
+        // Reposiciona só quando estava escondido: durante a sessão o usuário
+        // pode ter arrastado a ilha e recentrar a cada update desfaria o arrasto.
+        if !panel.isVisible {
+            presentation.isVisible = false
             positionAtBottomCenter(panel)
+            panel.orderFrontRegardless()
+            // Next runloop, so the pill animates in from its hidden state.
+            DispatchQueue.main.async { [presentation] in
+                presentation.isVisible = true
+            }
+        } else {
+            presentation.isVisible = true
             panel.orderFrontRegardless()
         }
     }
 
     func hide() {
-        panel?.orderOut(nil)
+        guard let panel, panel.isVisible else { return }
+        presentation.isVisible = false
+        pendingOrderOut?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.presentation.isVisible else { return }
+            self.panel?.orderOut(nil)
+        }
+        pendingOrderOut = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: work)
     }
 
     private func positionAtBottomCenter(_ panel: NSPanel) {
@@ -110,197 +130,251 @@ final class RecordingIslandController {
         let visible = screen.visibleFrame
         let size = panel.frame.size
         let x = visible.midX - size.width / 2
-        let y = visible.minY + 28
+        // The pill is centered in the panel; this keeps its bottom edge ~24 pt
+        // above the Dock, where the old island sat.
+        let y = visible.minY + 24 - (size.height - RecordingIslandMetrics.pillHeight) / 2
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
 
+/// The panel is a fixed, transparent stage; the pill sizes itself to its
+/// content inside it, so width changes (hover, states) can animate.
+enum RecordingIslandMetrics {
+    static let panel = NSSize(width: 440, height: 76)
+    static let pillHeight: CGFloat = 36
+    static let noticeMaxWidth: CGFloat = 320
+}
+
+private enum IslandStyle {
+    static let background = Color(hex: 0x141416)
+    static let lilac = Color(hex: 0xB9A7FF)
+    static let recordingRed = Color(hex: 0xFF453A)
+    static let resize = Animation.spring(response: 0.28, dampingFraction: 0.95)
+    static let appear = Animation.spring(response: 0.3, dampingFraction: 0.92)
+}
+
 private struct RecordingIslandView: View {
     @Bindable var model: MimirAppModel
-    @Bindable var levelMonitor: AudioLevelMonitor
-    var downloadMonitor: ModelDownloadMonitor
+    var levelMonitor: AudioLevelMonitor
+    var presentation: IslandPresentation
+
+    @State private var hovering = false
+    @State private var recordingStart = Date()
 
     private var isRecording: Bool { model.phase == .recording }
-    private var isPromptRewriteMode: Bool { model.activeMode == .promptRewrite }
+    private var isPrompt: Bool { model.activeMode == .promptRewrite }
     private var isShowingMetrics: Bool {
         model.phase == .idle && model.isFlashingMetrics && model.lastSessionMetrics != nil
     }
+    private var showsButtons: Bool { isRecording && hovering }
 
-    private var isShowingPolishPreview: Bool {
-        model.phase == .postProcessing
-            && (model.partialPolishText?.isEmpty == false)
-    }
-
-    private var promptRewriteAccent: Color {
-        Color.blue
-    }
-
-    private var waveTint: Color {
-        isPromptRewriteMode ? promptRewriteAccent : .white
-    }
-
-    private var borderColor: Color {
-        isPromptRewriteMode ? promptRewriteAccent.opacity(0.55) : Color.white.opacity(0.08)
-    }
-
-    private var borderWidth: CGFloat {
-        isPromptRewriteMode ? 1.4 : 1
+    /// Changes whenever the pill's content changes shape, to animate its width.
+    private var layoutKey: String {
+        "\(model.phase)-\(isPrompt)-\(showsButtons)-\(model.sessionNotice != nil)-\(isShowingMetrics)"
     }
 
     private var statusLabel: String {
-        let prefix = isPromptRewriteMode ? "Prompt · " : ""
         switch model.phase {
-        case .recording: return prefix + "Recording"
-        case .transcribing: return prefix + "Transcribing"
-        case .postProcessing: return prefix + "Thinking"
-        case .inserting: return prefix + "Inserting"
-        default: return ""
+        case .transcribing: "Transcribing"
+        case .postProcessing: "Polishing"
+        case .inserting: "Pasting"
+        default: ""
         }
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            if isRecording {
-                IslandButton(systemName: "xmark") {
+        content
+            .padding(.horizontal, showsButtons ? 5 : 14)
+            .frame(height: RecordingIslandMetrics.pillHeight)
+            .background(Capsule(style: .continuous).fill(IslandStyle.background))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(isPrompt && isRecording ? IslandStyle.lilac.opacity(0.35) : Color.white.opacity(0.09), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+            .contentShape(Capsule())
+            .onHover { inside in
+                withAnimation(IslandStyle.resize) { hovering = inside }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityAction(named: "Cancel dictation") {
+                if isRecording { Task { try? await model.cancelDictation() } }
+            }
+            .accessibilityAction(named: "Finish and paste") {
+                if isRecording { Task { try? await model.stopDictation() } }
+            }
+            .animation(IslandStyle.resize, value: layoutKey)
+            .scaleEffect(presentation.isVisible ? 1 : 0.92)
+            .opacity(presentation.isVisible ? 1 : 0)
+            .offset(y: presentation.isVisible ? 0 : 6)
+            .animation(IslandStyle.appear, value: presentation.isVisible)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: isRecording, initial: true) { _, recording in
+                if recording { recordingStart = .now }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isRecording {
+            // The buttons stay in the layout and grow from zero width: the
+            // ✕ slides out from behind the dot to the left, the ✓ from behind
+            // the timer to the right, mirrored.
+            HStack(spacing: 0) {
+                IslandButton(kind: .cancel, isPrompt: isPrompt) {
                     Task { try? await model.cancelDictation() }
                 }
-            } else {
-                Spacer().frame(width: 26, height: 26)
-            }
+                .modifier(HoverReveal(shown: showsButtons, edge: .leading))
 
-            if isRecording {
-                VStack(spacing: 3) {
-                    if isPromptRewriteMode {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 8, weight: .semibold))
-                            Text("Prompt")
-                                .font(.system(size: 9, weight: .semibold))
-                                .tracking(0.3)
-                        }
-                        .foregroundStyle(promptRewriteAccent)
+                HStack(spacing: 10) {
+                    if isPrompt {
+                        PromptBadge()
+                    } else {
+                        RecordingDot()
                     }
-                    AudioWaveView(levels: levelMonitor.levels, tint: waveTint)
+                    AudioWaveView(
+                        levels: levelMonitor.levels,
+                        tint: isPrompt ? IslandStyle.lilac : .white.opacity(0.92)
+                    )
+                    ElapsedTimer(since: recordingStart)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 12)
-                .frame(height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(isPromptRewriteMode ? promptRewriteAccent.opacity(0.12) : Color.white.opacity(0.08))
-                )
-            } else if isShowingMetrics, let metrics = model.lastSessionMetrics {
-                MetricsFlashView(metrics: metrics)
-                    .frame(maxWidth: .infinity)
-            } else if isShowingPolishPreview, let partial = model.partialPolishText {
-                PolishPreviewView(text: partial)
-                    .frame(maxWidth: .infinity)
-            } else {
-                ProcessingProgressView(phase: model.phase, label: statusLabel, accent: isPromptRewriteMode ? promptRewriteAccent : nil)
-                    .frame(maxWidth: .infinity)
-            }
+                .padding(.horizontal, showsButtons ? 10 : 0)
+                .zIndex(1)
 
-            if isRecording {
-                IslandButton(systemName: "checkmark", isPrimary: true, tint: isPromptRewriteMode ? promptRewriteAccent : nil) {
+                IslandButton(kind: .finish, isPrompt: isPrompt) {
                     Task { try? await model.stopDictation() }
                 }
-            } else {
-                Spacer().frame(width: 26, height: 26)
+                .modifier(HoverReveal(shown: showsButtons, edge: .trailing))
             }
+            .transition(.opacity)
+        } else if let notice = model.sessionNotice {
+            SessionNoticeView(notice: notice)
+                .transition(.opacity)
+        } else if isShowingMetrics, let metrics = model.lastSessionMetrics {
+            MetricsFlashView(metrics: metrics)
+                .transition(.opacity)
+        } else {
+            ProcessingProgressView(
+                phase: model.phase,
+                label: statusLabel,
+                accent: isPrompt ? IslandStyle.lilac : .white
+            )
+            .transition(.opacity)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .frame(
-            width: isShowingPolishPreview ? 420 : (isShowingMetrics ? 300 : 208),
-            height: isShowingPolishPreview ? 56 : 44
-        )
-        .background(
-            Capsule(style: .continuous)
-                .fill(MimirTheme.surface)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(borderColor, lineWidth: borderWidth)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
-        .animation(.easeInOut(duration: 0.2), value: isPromptRewriteMode)
+    }
+}
+
+private struct RecordingDot: View {
+    var body: some View {
+        Circle()
+            .fill(IslandStyle.recordingRed)
+            .frame(width: 8, height: 8)
+            .phaseAnimator([1.0, 0.35]) { dot, value in
+                dot.opacity(value)
+            } animation: { _ in
+                .easeInOut(duration: 0.8)
+            }
+            .accessibilityLabel("Recording")
+    }
+}
+
+private struct PromptBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "sparkle")
+                .font(.system(size: 11, weight: .semibold))
+            Text("Prompt")
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(IslandStyle.lilac)
+        .fixedSize()
+    }
+}
+
+private struct ElapsedTimer: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            let total = max(0, Int(context.date.timeIntervalSince(since)))
+            Text(String(format: "%d:%02d", total / 60, total % 60))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.55))
+                .fixedSize()
+        }
     }
 }
 
 private struct IslandButton: View {
-    let systemName: String
-    var isPrimary: Bool = false
-    var tint: Color? = nil
+    enum Kind { case cancel, finish }
+
+    let kind: Kind
+    let isPrompt: Bool
     let action: () -> Void
 
     @State private var hovering = false
 
-    private var fillColor: Color {
-        if isPrimary {
-            return tint ?? Color.white
-        }
-        return Color.white.opacity(hovering ? 0.18 : 0.12)
+    private var label: String {
+        kind == .cancel ? "Cancel dictation" : "Finish and paste"
     }
 
-    private var iconColor: Color {
-        if isPrimary {
-            return tint != nil ? Color.white : MimirTheme.surface
+    private var fill: Color {
+        switch kind {
+        case .cancel: Color.white.opacity(hovering ? 0.22 : 0.13)
+        case .finish: (isPrompt ? IslandStyle.lilac : Color.white).opacity(hovering ? 1 : 0.9)
         }
-        return .white
     }
 
     var body: some View {
         Button(action: action) {
             Circle()
-                .fill(fillColor)
+                .fill(fill)
                 .frame(width: 26, height: 26)
                 .overlay(
-                    Image(systemName: systemName)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(iconColor)
+                    Image(systemName: kind == .cancel ? "xmark" : "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(kind == .cancel ? Color.white : IslandStyle.background)
                 )
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .onHover { hovering = $0 }
+        .accessibilityLabel(label)
+        .help(kind == .cancel ? "Cancel (Esc)" : "Finish and paste")
     }
 }
 
 private struct ProcessingProgressView: View {
     let phase: AppPhase
     let label: String
-    var accent: Color? = nil
+    let accent: Color
 
     @State private var phaseStart: Date = .now
     @State private var trackedPhase: AppPhase = .idle
     @State private var lastProgress: Double = 0
 
     var body: some View {
-        VStack(spacing: 4) {
+        HStack(spacing: 9) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9))
                 .contentTransition(.opacity)
-                .id(label)
-                .transition(.opacity)
                 .animation(.easeInOut(duration: 0.25), value: label)
+                .fixedSize()
 
             TimelineView(.animation(minimumInterval: 0.05, paused: false)) { context in
-                GeometryReader { geo in
-                    let value = progress(at: context.date)
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.15))
-                        Capsule()
-                            .fill(progressGradient)
-                            .frame(width: max(3, geo.size.width * CGFloat(value)))
-                            .animation(.easeOut(duration: 0.15), value: value)
-                    }
+                let value = progress(at: context.date)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.15))
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: max(2, 64 * CGFloat(value)))
                 }
-                .frame(height: 3)
+                .frame(width: 64, height: 3)
             }
-            .frame(height: 3)
+            .frame(width: 64, height: 3)
         }
-        .padding(.horizontal, 4)
         .onAppear {
             trackedPhase = phase
             phaseStart = .now
@@ -322,11 +396,9 @@ private struct ProcessingProgressView: View {
         let (base, span, tau) = segment(for: trackedPhase)
         let elapsed = date.timeIntervalSince(phaseStart)
         guard tau > 0 else { return min(base + span, 0.99) }
-        let withinSegment = span * (1 - exp(-elapsed / tau))
-        let raw = base + withinSegment
+        let raw = base + span * (1 - exp(-elapsed / tau))
         // Nunca anda pra trás; trava em 0.99 enquanto a fase final não terminar.
-        let clamped = min(max(raw, lastProgress), 0.99)
-        return clamped
+        return min(max(raw, lastProgress), 0.99)
     }
 
     private func segment(for phase: AppPhase) -> (base: Double, span: Double, tau: Double) {
@@ -341,108 +413,84 @@ private struct ProcessingProgressView: View {
     private func segmentBase(for phase: AppPhase) -> Double {
         segment(for: phase).base
     }
-
-    private var progressGradient: LinearGradient {
-        if let accent {
-            return LinearGradient(
-                colors: [accent.opacity(0.65), accent],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
-        return LinearGradient(
-            colors: [Color(red: 0.0, green: 0.753, blue: 0.910), Color(red: 0.380, green: 0.333, blue: 0.961)],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
 }
 
-private struct ProcessingIndicator: View {
-    @State private var rotation: Double = 0
-
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.7)
-            .stroke(
-                Color.white.opacity(0.85),
-                style: StrokeStyle(lineWidth: 1.6, lineCap: .round)
-            )
-            .frame(width: 12, height: 12)
-            .rotationEffect(.degrees(rotation))
-            .onAppear {
-                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                    rotation = 360
-                }
-            }
-    }
-}
-
-private struct DownloadProgressView: View {
-    let fraction: Double
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.15))
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: max(4, geo.size.width * CGFloat(fraction)))
-                    .animation(.easeOut(duration: 0.2), value: fraction)
-            }
-        }
-        .frame(height: 6)
-    }
-}
-
+/// History of speech levels, newest on the right. Levels come from
+/// `SpeechLevelMeter`, already in a perceptual scale, so bars map linearly.
 private struct AudioWaveView: View {
     let levels: [Float]
     var tint: Color = .white
 
-    var body: some View {
-        HStack(spacing: 2.5) {
-            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
-                Capsule()
-                    .fill(tint)
-                    .frame(width: 2.5, height: barHeight(for: level))
-                    .animation(.easeOut(duration: 0.08), value: level)
-            }
+    /// Newest level in the middle, older ones spreading out to both sides and
+    /// tapering toward the edges, so the wave reads as one voice shape rather
+    /// than a row of unrelated bars.
+    private static let sideCount = 6
+
+    private var bars: [CGFloat] {
+        let recent = Array(levels.suffix(Self.sideCount + 1).reversed())   // newest first
+        return (-Self.sideCount...Self.sideCount).map { position in
+            let distance = abs(position)
+            let level = distance < recent.count ? CGFloat(max(0, min(1, recent[distance]))) : 0
+            let taper = 1 - CGFloat(distance) / CGFloat(Self.sideCount + 2)
+            return level * taper
         }
-        .frame(maxHeight: 16)
     }
 
-    private func barHeight(for level: Float) -> CGFloat {
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(bars.enumerated()), id: \.offset) { _, value in
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 3, height: barHeight(for: value))
+            }
+        }
+        .frame(height: 18)
+        // Glide between audio buffers (~85 ms) and ignore the hover spring,
+        // which made the bars flicker while the pill resized.
+        .transaction { $0.animation = .linear(duration: 0.1) }
+        .accessibilityHidden(true)
+    }
+
+    private func barHeight(for value: CGFloat) -> CGFloat {
         let minHeight: CGFloat = 3
-        let maxHeight: CGFloat = 14
-        return minHeight + CGFloat(level) * (maxHeight - minHeight)
+        let maxHeight: CGFloat = 18
+        return minHeight + value * (maxHeight - minHeight)
     }
 }
 
-private struct PolishPreviewView: View {
-    let text: String
+/// Falha ou "sem fala": a ilha fica visível alguns segundos com o motivo em vez
+/// de desaparecer em silêncio.
+private struct SessionNoticeView: View {
+    let notice: SessionNotice
+
+    private var isError: Bool {
+        if case .error = notice { return true }
+        return false
+    }
+
+    private var symbolName: String {
+        switch notice {
+        case .error: "exclamationmark.triangle.fill"
+        case .noSpeech: "mic.slash.fill"
+        case .audioTooQuiet: "mic.badge.xmark"
+        }
+    }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color(red: 0.72, green: 0.66, blue: 1.0))
-            Text(text)
-                .font(.system(size: 11, weight: .regular, design: .default))
+        HStack(spacing: 7) {
+            Image(systemName: symbolName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(isError ? Color.orange : Color.white.opacity(0.7))
+            Text(notice.displayText)
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(2)
-                .truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity)
-        .frame(height: 40)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-        )
-        .transition(.opacity)
+        .frame(maxWidth: RecordingIslandMetrics.noticeMaxWidth)
+        .help(notice.displayText)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(notice.displayText)
     }
 }
 
@@ -452,43 +500,64 @@ private struct MetricsFlashView: View {
     var body: some View {
         HStack(spacing: 10) {
             if let audio = metrics.audioSeconds {
-                metricItem(icon: "🎤", value: formatSeconds(audio))
+                metricItem(symbol: "mic", label: "Recorded", value: DurationFormat.short(audio))
             }
-            metricItem(icon: "📝", value: formatSeconds(metrics.transcriptionSeconds))
+            metricItem(symbol: "text.alignleft", label: "Transcribed in", value: DurationFormat.short(metrics.transcriptionSeconds))
             if let post = metrics.postProcessingSeconds {
-                metricItem(icon: "✨", value: formatSeconds(post))
+                metricItem(symbol: "sparkle", label: "Polished in", value: DurationFormat.short(post))
             }
-            Text(metrics.streamingUsed ? "🔗" : "⚠︎")
-                .font(.system(size: 11))
-                .foregroundStyle(
-                    metrics.streamingUsed ? Color.green.opacity(0.85) : Color.yellow.opacity(0.85)
-                )
-                .help(metrics.streamingUsed ? "Streaming active" : "Fallback: transcribed the whole file on stop")
+            if !metrics.streamingUsed {
+                let note = "Transcribed the whole file on stop"
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.yellow.opacity(0.85))
+                    .help(note)
+                    .accessibilityLabel(note)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 28)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-        )
-        .transition(.opacity)
     }
 
     @ViewBuilder
-    private func metricItem(icon: String, value: String) -> some View {
-        HStack(spacing: 3) {
-            Text(icon).font(.system(size: 10))
+    private func metricItem(symbol: String, label: String, value: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.5))
             Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.88))
                 .lineLimit(1)
                 .fixedSize()
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) \(value)")
+        .help("\(label) \(value)")
     }
+}
 
-    private func formatSeconds(_ seconds: TimeInterval) -> String {
-        DurationFormat.short(seconds)
+/// Hidden: zero width, tucked inward behind the neighbouring content.
+/// Shown: full width at the pill's edge. Animating between the two makes the
+/// button travel outward from the middle on both sides.
+private struct HoverReveal: ViewModifier {
+    let shown: Bool
+    let edge: HorizontalEdge
+
+    func body(content: Content) -> some View {
+        let inward: CGFloat = edge == .leading ? 12 : -12
+        content
+            // On the way out the button fades quickly, so it is gone before
+            // the pill finishes shrinking; on the way in it fades in a touch
+            // after the pill starts opening.
+            .opacity(shown ? 1 : 0)
+            .animation(
+                shown ? .easeOut(duration: 0.2).delay(0.04) : .easeIn(duration: 0.09),
+                value: shown
+            )
+            .scaleEffect(shown ? 1 : 0.85)
+            .offset(x: shown ? 0 : inward)
+            .frame(width: shown ? 26 : 0, alignment: edge == .leading ? .trailing : .leading)
+            .allowsHitTesting(shown)
+            .accessibilityHidden(!shown)
     }
 }
 

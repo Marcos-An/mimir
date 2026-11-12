@@ -8,6 +8,19 @@ func keyBindingDisplayStringFormatsCombo() {
     #expect(keyBindingDisplayString(binding) == "⌥⇧D")
 }
 
+@Test("Recorder keeps Option held when Space completes the shortcut")
+func recorderKeepsOptionWhenSpaceCompletesShortcut() {
+    let binding = KeyBinding.recordedCombination(
+        keyCode: 49,
+        modifiers: 1 << 19,
+        label: "⌥Space"
+    )
+
+    #expect(binding.keyCode == 49)
+    #expect(binding.modifiers == 1 << 19)
+    #expect(binding.keyCaps == ["⌥", "Space"])
+}
+
 @Test("keyBindingDisplayString returns label for modifier-only bindings")
 func keyBindingDisplayStringModifierOnly() {
     let binding = KeyBinding.defaultRightCommand

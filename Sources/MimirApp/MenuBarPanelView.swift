@@ -328,10 +328,6 @@ private struct PanelFooter: View {
             Spacer()
 
             Menu {
-                Button("About Mimir") {
-                    // Could open about window
-                }
-                Divider()
                 Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q", modifiers: .command)
             } label: {
@@ -368,44 +364,30 @@ private struct PanelIconButton: ButtonStyle {
 private struct DownloadPanelSection: View {
     @Bindable var monitor: ModelDownloadMonitor
 
+    private var fraction: Double? {
+        monitor.isIndeterminate ? nil : monitor.fractionCompleted
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(PanelPalette.blue)
-                Text("Preparing model")
-                    .font(.system(size: 13, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Downloading models")
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(PanelPalette.ink)
                 Spacer()
-                if !monitor.isIndeterminate {
-                    Text("\(Int(monitor.fractionCompleted * 100))%")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(PanelPalette.secondaryInk)
-                }
+                Text(fraction.map { "\(Int($0 * 100))%" } ?? "Starting…")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(PanelPalette.secondaryInk)
             }
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(PanelPalette.softFill)
-                    if monitor.isIndeterminate {
-                        IndeterminateBar(color: PanelPalette.blue)
-                    } else {
-                        Capsule()
-                            .fill(PanelPalette.blue)
-                            .frame(width: max(4, geo.size.width * CGFloat(monitor.fractionCompleted)))
-                            .animation(.easeOut(duration: 0.25), value: monitor.fractionCompleted)
-                    }
-                }
-            }
-            .frame(height: 4)
-
-            Text("~1.5 GB · runs 100% local after this")
+            ModelProgressBar(fraction: fraction)
+                .frame(height: 6)
+            Text("One time only. Everything runs on this Mac afterwards.")
                 .font(.system(size: 11))
                 .foregroundStyle(PanelPalette.secondaryInk)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
     }
 }
 
