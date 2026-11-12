@@ -233,6 +233,8 @@ public actor MLXPostProcessor: WarmableTextPostProcessing {
     If the dictation is rambling, fragmented, or self-correcting, preserve that content and order; preserve the original order even when the result remains a bit messy. Do not infer a cleaner plan or rewrite it into a different idea.
     Remove only obvious filler hesitations, exact accidental repetitions, and pause artifacts such as repeated ellipses.
     If a pause was transcribed as something like "... E ..." and the "E" adds no meaning, remove that pause marker.
+    The speaker often pauses mid-sentence to think (many are speaking a second language), and the transcript puts a period at every pause. Join fragments that clearly continue the same sentence into one sentence ("I'm still. Speaking the phrase." → "I'm still speaking the phrase."; "Eu queria. Que você olhasse." → "Eu queria que você olhasse.").
+    When a short fragment (up to four words) is abandoned and immediately restarted after a pause, keep only the restarted version ("I'm not a. I'm not a. I don't have it." → "I don't have it."; "I'm still. I'm still. Speaking" → "I'm still speaking"). Never drop a fragment that adds information.
     Do not summarize, compress, invent details, complete unfinished thoughts, add context, reorganize, or change the argument.
     Do not turn prose into headings, sections, or bullet lists unless the dictation clearly enumerates items.
     If a change could alter the meaning, preserve the original wording.

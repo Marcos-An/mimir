@@ -326,7 +326,10 @@ public struct LocalPipeline: Sendable {
         guard !isModelCommentary(proposed, original: original) else { return originalText }
         guard intent == .defaults else { return proposedText }
         guard original.count >= 120 else { return proposedText }
-        let minimumAllowedCount = Int((Double(original.count) * 0.90).rounded(.down))
+        // 80%: joining pause fragments and dropping restarted false starts
+        // ("I'm not a. I'm not a. I don't have") legitimately removes more
+        // than the 10% this used to allow, which threw the whole cleanup away.
+        let minimumAllowedCount = Int((Double(original.count) * 0.80).rounded(.down))
         if proposed.count < minimumAllowedCount {
             return originalText
         }
