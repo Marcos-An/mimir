@@ -29,7 +29,7 @@ public enum DashboardSection {
     public static let settingsItems: [DashboardItem] = [
         DashboardItem(id: "general", title: "General", systemImage: "gearshape"),
         DashboardItem(id: "audio", title: "Audio", systemImage: "mic"),
-        DashboardItem(id: "pipeline", title: "Pipeline", systemImage: "point.3.connected.trianglepath.dotted"),
+        DashboardItem(id: "pipeline", title: "Dictation", systemImage: "point.3.connected.trianglepath.dotted"),
         DashboardItem(id: "permissions", title: "Permissions", systemImage: "checkmark.shield"),
         DashboardItem(id: "about", title: "About", systemImage: "info.circle")
     ]

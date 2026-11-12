@@ -30,24 +30,37 @@ public struct ClipboardPasteInserter: TextInserting {
 
         do {
             _ = try PermissionCoordinator.ensureAccessibilityAccess(prompt: false)
-            await yieldFocusFromMimir()
-            try await Task.sleep(for: .milliseconds(120))
+            let yieldedFocus = await yieldFocusFromMimir()
+            if yieldedFocus {
+                // Só espera o foco assentar quando o Mimir estava frontmost e
+                // precisou se esconder. No fluxo normal (ditando em outro app via
+                // painel non-activating) o alvo já está focado — esperar aqui era
+                // 120 ms de latência pura em todo paste.
+                try await Task.sleep(for: .milliseconds(120))
+            }
             try sendCommandV()
         } catch {
             restorePasteboard(previousItems)
             throw error
         }
 
-        try? await Task.sleep(for: .milliseconds(150))
-        restorePasteboard(previousItems)
+        // A restauração do clipboard não precisa segurar o retorno (e a fase
+        // "Pasting…" da UI): o Cmd+V já foi postado; os 150 ms são só a margem
+        // pro app alvo ler o clipboard antes de devolvermos o conteúdo antigo.
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            restorePasteboard(previousItems)
+        }
     }
 
+    /// Retorna `true` quando o Mimir estava frontmost e cedeu o foco.
     @MainActor
-    private func yieldFocusFromMimir() {
+    private func yieldFocusFromMimir() -> Bool {
         let bundleID = Bundle.main.bundleIdentifier
-        guard let frontmost = NSWorkspace.shared.frontmostApplication else { return }
-        guard frontmost.bundleIdentifier == bundleID else { return }
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else { return false }
+        guard frontmost.bundleIdentifier == bundleID else { return false }
         NSApp.hide(nil)
+        return true
     }
 
     private func sendCommandV() throws {

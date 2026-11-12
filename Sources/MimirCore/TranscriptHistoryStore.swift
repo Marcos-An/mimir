@@ -4,6 +4,7 @@ import Observation
 public struct TranscriptEntry: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
     public let text: String
+    public let rawText: String?
     public let createdAt: Date
     public let durationSeconds: Double?
     public let sessionMetrics: SessionMetrics?
@@ -11,25 +12,28 @@ public struct TranscriptEntry: Codable, Identifiable, Equatable, Sendable {
     public init(
         id: UUID = UUID(),
         text: String,
+        rawText: String? = nil,
         createdAt: Date = Date(),
         durationSeconds: Double? = nil,
         sessionMetrics: SessionMetrics? = nil
     ) {
         self.id = id
         self.text = text
+        self.rawText = rawText
         self.createdAt = createdAt
         self.durationSeconds = durationSeconds
         self.sessionMetrics = sessionMetrics
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, createdAt, durationSeconds, sessionMetrics
+        case id, text, rawText, createdAt, durationSeconds, sessionMetrics
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(UUID.self, forKey: .id)
         self.text = try c.decode(String.self, forKey: .text)
+        self.rawText = try c.decodeIfPresent(String.self, forKey: .rawText)
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
         self.durationSeconds = try c.decodeIfPresent(Double.self, forKey: .durationSeconds)
         self.sessionMetrics = try c.decodeIfPresent(SessionMetrics.self, forKey: .sessionMetrics)
@@ -58,13 +62,16 @@ public final class TranscriptHistoryStore {
 
     public func add(
         _ text: String,
+        rawText: String? = nil,
         durationSeconds: Double? = nil,
         sessionMetrics: SessionMetrics? = nil
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let trimmedRaw = rawText?.trimmingCharacters(in: .whitespacesAndNewlines)
         let entry = TranscriptEntry(
             text: trimmed,
+            rawText: trimmedRaw?.isEmpty == false ? trimmedRaw : nil,
             durationSeconds: durationSeconds,
             sessionMetrics: sessionMetrics
         )

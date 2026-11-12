@@ -7,6 +7,7 @@ public enum MimirError: LocalizedError, Equatable, Sendable {
     case onDeviceSpeechUnavailable
     case transcriptionFailed(String)
     case emptyTranscript
+    case postProcessingFailed(String)
     case clipboardAccessFailed
     case accessibilityPermissionDenied
     case noRecordingInProgress
@@ -25,6 +26,8 @@ public enum MimirError: LocalizedError, Equatable, Sendable {
             "Transcription failed: \(message)"
         case .emptyTranscript:
             "No speech was detected."
+        case .postProcessingFailed(let message):
+            "Post-processing failed: \(message)"
         case .clipboardAccessFailed:
             "Could not write to the clipboard."
         case .accessibilityPermissionDenied:

@@ -26,14 +26,14 @@ func routerHandlesPunctuationAfterTrigger() {
 @Test("Router detects translate trigger in Portuguese")
 func routerDetectsTraduzirTrigger() {
     let routed = CommandPrefixRouter.route("traduzir: vou precisar disso para hoje")
-    #expect(routed.intent == .translateToEnglish)
+    #expect(routed.intent == .translateTo("en"))
     #expect(routed.text == "vou precisar disso para hoje")
 }
 
 @Test("Router detects translate trigger in English")
 func routerDetectsTranslateTrigger() {
     let routed = CommandPrefixRouter.route("Translate. I need this done today.")
-    #expect(routed.intent == .translateToEnglish)
+    #expect(routed.intent == .translateTo("en"))
     #expect(routed.text == "I need this done today.")
 }
 

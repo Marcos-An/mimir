@@ -4,54 +4,77 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var activationMode: ActivationMode
     public var activationTrigger: KeyBinding
     public var promptRewriteActivationTrigger: KeyBinding
-    public var hermesActivationTrigger: KeyBinding
     public var transcriptionProvider: TranscriptionProvider
     public var transcriptionStrategy: TranscriptionStrategy
     public var whisperKitModel: WhisperKitModel
+    /// Who cleans plain dictation.
     public var postProcessingProvider: PostProcessingProvider
+    /// Who rewrites speech into a prompt (the Prompt shortcut).
+    public var promptPostProcessingProvider: PostProcessingProvider
     public var postProcessingStyle: PostProcessingStyle
     public var insertionStrategy: InsertionStrategy
     public var shouldAutoPaste: Bool
     public var preferredLanguage: String?
     public var inputDeviceUID: String?
+    /// Vocabulário pessoal (nomes, projetos, jargão), um termo por linha.
+    /// Vai para o prompt do decoder do Whisper (acerta a grafia na origem) e
+    /// para o prompt do pós-processador, que restaura o que ainda sair
+    /// fonético ("Nathemans" → "Natemans").
+    public var customVocabulary: String
+    /// Guarda as últimas gravações em disco (ver `RecordingArchive`). Desligado
+    /// por padrão: é áudio do usuário, só fica quando ele pede.
+    public var keepsRecentRecordings: Bool
 
     public init(
         activationMode: ActivationMode,
         activationTrigger: KeyBinding,
         promptRewriteActivationTrigger: KeyBinding,
-        hermesActivationTrigger: KeyBinding,
         transcriptionProvider: TranscriptionProvider,
         transcriptionStrategy: TranscriptionStrategy,
         whisperKitModel: WhisperKitModel,
         postProcessingProvider: PostProcessingProvider,
+        promptPostProcessingProvider: PostProcessingProvider? = nil,
         postProcessingStyle: PostProcessingStyle,
         insertionStrategy: InsertionStrategy,
         shouldAutoPaste: Bool,
         preferredLanguage: String?,
-        inputDeviceUID: String? = nil
+        inputDeviceUID: String? = nil,
+        customVocabulary: String = "",
+        keepsRecentRecordings: Bool = false
     ) {
         self.activationMode = activationMode
         self.activationTrigger = activationTrigger
         self.promptRewriteActivationTrigger = promptRewriteActivationTrigger
-        self.hermesActivationTrigger = hermesActivationTrigger
         self.transcriptionProvider = transcriptionProvider
         self.transcriptionStrategy = transcriptionStrategy
         self.whisperKitModel = whisperKitModel
         self.postProcessingProvider = postProcessingProvider
+        self.promptPostProcessingProvider = promptPostProcessingProvider ?? postProcessingProvider
         self.postProcessingStyle = postProcessingStyle
         self.insertionStrategy = insertionStrategy
         self.shouldAutoPaste = shouldAutoPaste
         self.preferredLanguage = preferredLanguage
         self.inputDeviceUID = inputDeviceUID
+        self.customVocabulary = customVocabulary
+        self.keepsRecentRecordings = keepsRecentRecordings
     }
 
     private enum CodingKeys: String, CodingKey {
-        case activationMode, activationTrigger, promptRewriteActivationTrigger, hermesActivationTrigger
+        case activationMode, activationTrigger, promptRewriteActivationTrigger
         case transcriptionProvider
         case transcriptionStrategy, whisperKitModel
-        case postProcessingProvider, postProcessingStyle
+        case postProcessingProvider, promptPostProcessingProvider, postProcessingStyle
         case insertionStrategy, shouldAutoPaste
         case preferredLanguage, inputDeviceUID
+        case customVocabulary, keepsRecentRecordings
+    }
+
+    /// Chaves que existem só para migração de esquemas antigos — nunca são
+    /// re-escritas no encode (mantê-las em `CodingKeys` quebraria a síntese
+    /// de `Encodable`, que exige uma propriedade por chave).
+    private enum LegacyCodingKeys: String, CodingKey {
+        /// Pré-rename: "hermesActivationTrigger" era o atalho de Prompt/Rewrite.
+        case hermesActivationTrigger
     }
 
     public init(from decoder: Decoder) throws {
@@ -59,45 +82,42 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.activationMode = try container.decode(ActivationMode.self, forKey: .activationMode)
         self.activationTrigger = try container.decode(KeyBinding.self, forKey: .activationTrigger)
 
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
         let promptRewriteFromJSON = try container.decodeIfPresent(KeyBinding.self, forKey: .promptRewriteActivationTrigger)
-        let hermesFromJSON = try container.decodeIfPresent(KeyBinding.self, forKey: .hermesActivationTrigger)
-        if let promptRewriteFromJSON {
-            // Modern schema: each shortcut has its own key.
-            self.promptRewriteActivationTrigger = promptRewriteFromJSON
-            self.hermesActivationTrigger = hermesFromJSON ?? .defaultHermesHandoff
-        } else {
-            // Legacy schema (pre-rename): the key "hermesActivationTrigger" used to
-            // mean the Prompt / Rewrite shortcut. Migrate it there and seed the new
-            // Hermes handoff binding from the default.
-            self.promptRewriteActivationTrigger = hermesFromJSON ?? .defaultRightOptionSpace
-            self.hermesActivationTrigger = .defaultHermesHandoff
-        }
-
+        let legacyHermesFromJSON = try legacyContainer.decodeIfPresent(KeyBinding.self, forKey: .hermesActivationTrigger)
+        self.promptRewriteActivationTrigger = promptRewriteFromJSON ?? legacyHermesFromJSON ?? .defaultRightOptionSpace
         self.transcriptionProvider = try container.decode(TranscriptionProvider.self, forKey: .transcriptionProvider)
         self.transcriptionStrategy = try container.decodeIfPresent(TranscriptionStrategy.self, forKey: .transcriptionStrategy) ?? .chunked
-        self.whisperKitModel = try container.decodeIfPresent(WhisperKitModel.self, forKey: .whisperKitModel) ?? .largeV3TurboQuantized
+        self.whisperKitModel = try container.decodeIfPresent(WhisperKitModel.self, forKey: .whisperKitModel) ?? .whisperTurbo
         self.postProcessingProvider = try container.decode(PostProcessingProvider.self, forKey: .postProcessingProvider)
+        // Before the split one provider served both modes; keep that behaviour.
+        self.promptPostProcessingProvider = try container.decodeIfPresent(
+            PostProcessingProvider.self, forKey: .promptPostProcessingProvider
+        ) ?? postProcessingProvider
         self.postProcessingStyle = try container.decodeIfPresent(PostProcessingStyle.self, forKey: .postProcessingStyle) ?? .structured
         self.insertionStrategy = try container.decode(InsertionStrategy.self, forKey: .insertionStrategy)
         self.shouldAutoPaste = try container.decode(Bool.self, forKey: .shouldAutoPaste)
         self.preferredLanguage = try container.decodeIfPresent(String.self, forKey: .preferredLanguage)
         self.inputDeviceUID = try container.decodeIfPresent(String.self, forKey: .inputDeviceUID)
+        self.customVocabulary = try container.decodeIfPresent(String.self, forKey: .customVocabulary) ?? ""
+        self.keepsRecentRecordings = try container.decodeIfPresent(Bool.self, forKey: .keepsRecentRecordings) ?? false
     }
 
     public static let `default` = AppSettings(
         activationMode: .tapToToggle,
         activationTrigger: .defaultRightCommand,
         promptRewriteActivationTrigger: .defaultRightOptionSpace,
-        hermesActivationTrigger: .defaultHermesHandoff,
         transcriptionProvider: .whisperKit,
         transcriptionStrategy: .chunked,
-        whisperKitModel: .largeV3TurboQuantized,
+        whisperKitModel: .whisperTurbo,
         postProcessingProvider: .mlx,
+        promptPostProcessingProvider: .mlx,
         postProcessingStyle: .cleanDictation,
         insertionStrategy: .clipboardPaste,
         shouldAutoPaste: true,
         preferredLanguage: nil,
-        inputDeviceUID: nil
+        inputDeviceUID: nil,
+        customVocabulary: ""
     )
 }
 
@@ -123,6 +143,10 @@ public enum WhisperKitModel: String, Codable, CaseIterable, Equatable, Sendable 
     case largeV3TurboQuantized
     case largeV3Turbo
     case largeV3
+    /// O large-v3-turbo da OpenAI (decoder de 4 camadas, release 2024-09-30).
+    /// Os dois casos "Turbo" acima são, apesar do nome, o large-v3 completo de
+    /// 32 camadas com o encoder otimizado da Argmax — bem mais lentos.
+    case whisperTurbo
 
     public var displayName: String {
         switch self {
@@ -135,11 +159,13 @@ public enum WhisperKitModel: String, Codable, CaseIterable, Equatable, Sendable 
         case .medium:
             "Medium (769M, high quality)"
         case .largeV3TurboQuantized:
-            "Large v3 Turbo quantized (~950MB, near-full quality)"
+            "Large v3 compressed (~950MB, slow)"
         case .largeV3Turbo:
-            "Large v3 Turbo full (~3GB, top quality)"
+            "Large v3 full (~3GB, slow)"
         case .largeV3:
             "Large v3 (1.5B, maximum quality, slower)"
+        case .whisperTurbo:
+            "Large v3 Turbo (~630MB, fast, recommended)"
         }
     }
 
@@ -160,6 +186,8 @@ public enum WhisperKitModel: String, Codable, CaseIterable, Equatable, Sendable 
             "openai_whisper-large-v3_turbo"
         case .largeV3:
             "openai_whisper-large-v3"
+        case .whisperTurbo:
+            "openai_whisper-large-v3-v20240930_turbo_632MB"
         }
     }
 }
@@ -213,6 +241,10 @@ public struct KeyBinding: Codable, Equatable, Sendable {
         self.deviceMask = deviceMask
     }
 
+    public static func recordedCombination(keyCode: UInt16, modifiers: UInt, label: String) -> KeyBinding {
+        KeyBinding(keyCode: keyCode, modifiers: modifiers, label: label)
+    }
+
     public var isModifierOnly: Bool {
         Self.modifierKeyCodes.contains(keyCode) && modifiers == 0
     }
@@ -230,22 +262,12 @@ public struct KeyBinding: Codable, Equatable, Sendable {
         label: "Right ⌘"
     )
 
-    /// Default para o modo Hermes: ⌥ + espaço.
+    /// Default para o modo Prompt/Rewrite: ⌥ + espaço.
     /// keyCode 49 = space; modifiers = .option (1 << 19).
     public static let defaultRightOptionSpace = KeyBinding(
         keyCode: 49,
         modifiers: 1 << 19,
         label: "⌥ Space"
-    )
-
-    /// Default para o handoff do Hermes: Right ⌥ + Left ⇧.
-    /// `modifiers` stores device-independent Option+Shift; `deviceMask`
-    /// pins the physical sides to right option (0x40) and left shift (0x02).
-    public static let defaultHermesHandoff = KeyBinding(
-        keyCode: 0,
-        modifiers: (1 << 19) | (1 << 17),
-        label: "Right ⌥ + Left ⇧",
-        deviceMask: 0x40 | 0x02
     )
 
     public var keyCaps: [String] {
@@ -320,16 +342,22 @@ public enum TranscriptionProvider: String, Codable, CaseIterable, Equatable, Sen
 
 public enum PostProcessingProvider: String, Codable, CaseIterable, Equatable, Sendable {
     case disabled
+    case anthropic
     case mlx
 
     public var displayName: String {
         switch self {
         case .disabled:
-            "Disabled"
+            "Off (basic cleanup only)"
+        case .anthropic:
+            "Claude (cloud)"
         case .mlx:
-            "MLX (local)"
+            "Local AI (on this Mac)"
         }
     }
+
+    /// The text leaves the Mac.
+    public var isCloud: Bool { self == .anthropic }
 
     public var isAvailable: Bool {
         true

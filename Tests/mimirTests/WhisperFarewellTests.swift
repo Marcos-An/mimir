@@ -2,10 +2,31 @@ import Foundation
 import Testing
 @testable import MimirCore
 
-@Test("Strips hallucinated 'obrigado' appended after real content")
-func stripsAppendedObrigado() {
+// O filtro de farewell existe para remover artefatos do treino do Whisper em
+// vídeos de YouTube ("thanks for watching", "legendas pela equipe"). Ele NÃO
+// pode remover despedidas que um usuário real dita no fim de uma mensagem —
+// "obrigado", "valeu", "tchau", "amém" são conteúdo legítimo em pt-BR.
+
+@Test("Preserves dictated 'obrigado' at the end of a real message")
+func preservesDictatedObrigado() {
     let input = "Vou ao mercado depois da reunião. Obrigado."
-    #expect(WhisperKitProvider.stripTailFarewells(input) == "Vou ao mercado depois da reunião.")
+    #expect(WhisperKitProvider.stripTailFarewells(input) == input)
+}
+
+@Test("Preserves dictated casual and religious closings")
+func preservesDictatedCasualClosings() {
+    let cases = [
+        "Consegui ajustar o layout. Muito obrigado.",
+        "Vamos recalcular os dias pendentes. Amém.",
+        "Ajusta o endpoint de staging. Até a próxima.",
+        "Confere o fetch da próxima página. Falou.",
+        "Essa foi a reunião de hoje. Obrigado pela atenção.",
+        "We should review the branch diff. Thanks.",
+        "I'll send the PR today. Bye."
+    ]
+    for input in cases {
+        #expect(WhisperKitProvider.stripTailFarewells(input) == input)
+    }
 }
 
 @Test("Strips hallucinated 'thanks for watching'")
@@ -14,27 +35,36 @@ func stripsThanksForWatching() {
     #expect(WhisperKitProvider.stripTailFarewells(input) == "Ok so this is the plan for tomorrow.")
 }
 
+@Test("Strips unmistakable YouTube-artifact closings in Portuguese")
+func stripsYouTubeArtifactClosingsInPortuguese() {
+    #expect(
+        WhisperKitProvider.stripTailFarewells("Refatora o worker da fila. Obrigado por assistir.")
+            == "Refatora o worker da fila."
+    )
+    #expect(
+        WhisperKitProvider.stripTailFarewells("Sobe a migration antes do deploy. Até o próximo vídeo.")
+            == "Sobe a migration antes do deploy."
+    )
+    #expect(
+        WhisperKitProvider.stripTailFarewells("Revisa o diff comigo. Legendas pela equipe.")
+            == "Revisa o diff comigo."
+    )
+}
+
 @Test("Preserves standalone farewell (could be a real short message)")
 func preservesStandaloneFarewell() {
-    #expect(WhisperKitProvider.stripTailFarewells("Obrigado.") == "Obrigado.")
-    #expect(WhisperKitProvider.stripTailFarewells("thanks") == "thanks")
+    #expect(WhisperKitProvider.stripTailFarewells("Obrigado por assistir.") == "Obrigado por assistir.")
+    #expect(WhisperKitProvider.stripTailFarewells("thanks for watching") == "thanks for watching")
 }
 
 @Test("Does not strip when tail sentence is long — not a hallucination signature")
 func keepsLongTailSentence() {
-    let input = "Vou almoçar. Obrigado por me avisar do horário."
+    let input = "Vou almoçar. Obrigado por assistir a demo que gravei ontem com o time inteiro."
     #expect(WhisperKitProvider.stripTailFarewells(input) == input)
-}
-
-@Test("Strips Portuguese full farewell phrase")
-func stripsFullFarewellPhrase() {
-    let input = "Essa foi a reunião de hoje. Obrigado pela atenção."
-    #expect(WhisperKitProvider.stripTailFarewells(input) == "Essa foi a reunião de hoje.")
 }
 
 @Test("Handles text without terminal punctuation")
 func handlesNoTerminatorEdgeCase() {
-    // No sentence terminator — entire input becomes the tail. Since stripping
-    // would leave nothing, input is preserved.
-    #expect(WhisperKitProvider.stripTailFarewells("obrigado") == "obrigado")
+    #expect(WhisperKitProvider.stripTailFarewells("obrigado por assistir") == "obrigado por assistir")
+    #expect(WhisperKitProvider.stripTailFarewells("amém") == "amém")
 }
