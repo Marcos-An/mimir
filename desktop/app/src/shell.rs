@@ -85,6 +85,13 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Mimir", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Mimir", true, None::<&str>)?;
+    // Linux tray icons only open their menu on click, so the panel gets an item.
+    #[cfg(target_os = "linux")]
+    let menu = {
+        let recent = MenuItem::with_id(app, "panel", "Latest text", true, None::<&str>)?;
+        Menu::with_items(app, &[&recent, &open, &settings, &quit])?
+    };
+    #[cfg(not(target_os = "linux"))]
     let menu = Menu::with_items(app, &[&open, &settings, &quit])?;
     TrayIconBuilder::with_id("main")
         .icon(icon(false))
@@ -92,6 +99,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
+            "panel" => show_panel(app, None),
             "open" => show_main(app, None),
             "settings" => show_main(app, Some("general")),
             "quit" => app.exit(0),

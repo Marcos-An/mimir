@@ -5,6 +5,7 @@
 //! the user's clipboard is saved in every format (files from Explorer, Excel
 //! cells, formatted Word text), not only as text.
 
+#[cfg(windows)]
 use arboard::Clipboard;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use std::sync::Mutex;
@@ -127,8 +128,21 @@ mod clip {
 
 #[cfg(not(windows))]
 mod clip {
-    //! Text and images only (development builds on macOS; Linux comes later).
+    //! Text and images (macOS development builds, Linux). On X11 the
+    //! clipboard only holds data while the program that set it keeps its
+    //! handle open, so one handle lives for the whole app.
     use arboard::{Clipboard, ImageData};
+    use std::sync::Mutex;
+
+    static SHARED: Mutex<Option<Clipboard>> = Mutex::new(None);
+
+    pub fn with<T>(f: impl FnOnce(&mut Clipboard) -> Result<T, arboard::Error>) -> Result<T, String> {
+        let mut shared = SHARED.lock().unwrap();
+        if shared.is_none() {
+            *shared = Some(Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?);
+        }
+        f(shared.as_mut().unwrap()).map_err(|e| format!("Clipboard unavailable: {e}"))
+    }
 
     pub enum Saved {
         Text(String),
@@ -138,11 +152,10 @@ mod clip {
     pub type Marker = String;
 
     pub fn snapshot() -> Saved {
-        let Ok(mut clipboard) = Clipboard::new() else { return Saved::Unknown };
-        if let Ok(text) = clipboard.get_text() {
+        if let Ok(text) = with(|c| c.get_text()) {
             return Saved::Text(text);
         }
-        if let Ok(image) = clipboard.get_image() {
+        if let Ok(image) = with(|c| c.get_image()) {
             return Saved::Image(image.to_owned_img());
         }
         Saved::Unknown
@@ -150,10 +163,9 @@ mod clip {
 
     /// An unknown format is left alone rather than wiped.
     pub fn restore(saved: Saved) {
-        let Ok(mut clipboard) = Clipboard::new() else { return };
         let _ = match saved {
-            Saved::Text(text) => clipboard.set_text(text),
-            Saved::Image(image) => clipboard.set_image(image),
+            Saved::Text(text) => with(|c| c.set_text(text)),
+            Saved::Image(image) => with(|c| c.set_image(image)),
             Saved::Unknown => Ok(()),
         };
     }
@@ -163,19 +175,21 @@ mod clip {
     }
 
     pub fn unchanged(marker: Marker) -> bool {
-        Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).as_deref() == Some(marker.as_str())
+        with(|c| c.get_text()).ok().as_deref() == Some(marker.as_str())
     }
 }
 
 #[cfg(windows)]
-fn set_private_text(clipboard: &mut Clipboard, text: &str) -> Result<(), arboard::Error> {
+fn set_private_text(text: &str) -> Result<(), String> {
     use arboard::SetExtWindows;
-    clipboard.set().exclude_from_history().exclude_from_cloud().exclude_from_monitoring().text(text)
+    Clipboard::new()
+        .and_then(|mut c| c.set().exclude_from_history().exclude_from_cloud().exclude_from_monitoring().text(text))
+        .map_err(|e| format!("Clipboard unavailable: {e}"))
 }
 
 #[cfg(not(windows))]
-fn set_private_text(clipboard: &mut Clipboard, text: &str) -> Result<(), arboard::Error> {
-    clipboard.set_text(text)
+fn set_private_text(text: &str) -> Result<(), String> {
+    clip::with(|c| c.set_text(text))
 }
 
 /// Waits (500 ms at most) until Ctrl, Shift, Alt and Win are up, so the
@@ -219,12 +233,10 @@ pub fn paste(text: &str) -> Result<(), String> {
     };
     // The user's clipboard: still pending from a paste a moment ago, or now.
     let saved = PENDING.lock().unwrap().take().map(|p| p.saved).unwrap_or_else(clip::snapshot);
-    let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard unavailable: {e}"))?;
-    if let Err(e) = set_private_text(&mut clipboard, text) {
+    if let Err(e) = set_private_text(text) {
         clip::restore(saved);
-        return Err(format!("Clipboard unavailable: {e}"));
+        return Err(e);
     }
-    drop(clipboard);
     let marker = clip::marker(text);
     wait_for_modifiers_up();
     if let Err(error) = press_paste() {
@@ -247,6 +259,12 @@ pub fn paste(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
 pub fn copy(text: &str) -> Result<(), String> {
     Clipboard::new().and_then(|mut c| c.set_text(text)).map_err(|e| format!("Clipboard unavailable: {e}"))
+}
+
+#[cfg(not(windows))]
+pub fn copy(text: &str) -> Result<(), String> {
+    clip::with(|c| c.set_text(text))
 }
