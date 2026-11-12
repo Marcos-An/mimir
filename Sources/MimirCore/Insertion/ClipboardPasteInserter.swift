@@ -25,6 +25,7 @@ public struct ClipboardPasteInserter: TextInserting {
         guard pasteboard.setString(text, forType: .string) else {
             throw MimirError.clipboardAccessFailed
         }
+        let ourChangeCount = pasteboard.changeCount
 
         guard autoPaste else { return }
 
@@ -44,11 +45,14 @@ public struct ClipboardPasteInserter: TextInserting {
             throw error
         }
 
-        // A restauração do clipboard não precisa segurar o retorno (e a fase
-        // "Pasting…" da UI): o Cmd+V já foi postado; os 150 ms são só a margem
-        // pro app alvo ler o clipboard antes de devolvermos o conteúdo antigo.
+        // Restoring doesn't hold the return (or the "Pasting…" phase): ⌘V is
+        // already posted. The target app reads the clipboard when it handles
+        // the keystroke, and a busy app (Slack) can take far longer than the
+        // 150 ms used before — it then pasted the user's OLD clipboard. Wait
+        // 1 s, and skip the restore if anything else wrote the clipboard since.
         Task {
-            try? await Task.sleep(for: .milliseconds(150))
+            try? await Task.sleep(for: .milliseconds(1000))
+            guard NSPasteboard.general.changeCount == ourChangeCount else { return }
             restorePasteboard(previousItems)
         }
     }
