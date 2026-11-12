@@ -58,6 +58,11 @@ struct MenuBarPanelView: View {
                 Divider().opacity(0.5)
             }
 
+            if ClaudeCreditsState.shared.isOutOfCredits {
+                ClaudeCreditsNotice(ink: PanelPalette.ink, secondaryInk: PanelPalette.secondaryInk)
+                Divider().opacity(0.5)
+            }
+
             PanelHeader(
                 phase: model.phase,
                 shortcutLabel: store.settings.activationTrigger.label,
@@ -194,6 +199,9 @@ private struct LatestSection: View {
     @Bindable var history: TranscriptHistoryStore
     let phase: AppPhase
 
+    @State private var copied = false
+    @State private var resetCopied: DispatchWorkItem?
+
     private var latest: TranscriptEntry? { history.entries.first }
     private var recent: [TranscriptEntry] { Array(history.entries.dropFirst().prefix(3)) }
 
@@ -210,17 +218,20 @@ private struct LatestSection: View {
                         copy(latest.text)
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "doc.on.doc")
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                 .font(.system(size: 10, weight: .semibold))
-                            Text("Copy")
+                                .contentTransition(.symbolEffect(.replace))
+                            Text(copied ? "Copied" : "Copy")
                                 .font(.system(size: 11, weight: .semibold))
                         }
-                        .foregroundStyle(PanelPalette.ink.opacity(0.8))
+                        .foregroundStyle(copied ? Color(red: 0.2, green: 0.78, blue: 0.4) : PanelPalette.ink.opacity(0.8))
+                        .animation(.easeOut(duration: 0.15), value: copied)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(copied ? "Copied" : "Copy latest text")
                 }
             }
 
@@ -258,6 +269,11 @@ private struct LatestSection: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        resetCopied?.cancel()
+        let work = DispatchWorkItem { copied = false }
+        resetCopied = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 }
 
