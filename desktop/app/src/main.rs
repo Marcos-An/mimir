@@ -116,6 +116,7 @@ fn save_settings(app: AppHandle, controller: Ctl, settings: Settings) -> Result<
     let old = controller.settings.lock().unwrap().shortcut.clone();
     shell::register_shortcut(&app, Some(&old), &settings.shortcut)?;
     settings.save().map_err(|e| format!("Could not save settings: {e}"))?;
+    shell::apply_appearance(&app, settings.appearance);
     *controller.settings.lock().unwrap() = settings;
     controller.publish(&app);
     Ok(())
@@ -252,6 +253,7 @@ fn main() {
             shell::build_tray(app.handle())?;
             shell::build_island(app.handle())?;
             let settings = controller.settings.lock().unwrap().clone();
+            shell::apply_appearance(app.handle(), settings.appearance);
             let shortcut_ok = shell::register_shortcut(app.handle(), None, &settings.shortcut).is_ok();
             store::log(
                 "launch",
@@ -278,6 +280,8 @@ fn main() {
             WindowEvent::Focused(false) if window.label() == "panel" => {
                 let _ = window.hide();
             }
+            // Windows switches taskbar and apps together in Settings > Colors.
+            WindowEvent::ThemeChanged(_) if window.label() == "main" => shell::refresh_tray(window.app_handle()),
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,5 +1,6 @@
-/* The Mac app's palette (MimirIdentity, MimirTheme, AppKit light colors).
-   Mimir is light only on the Mac, so it is light only here too. */
+/* The Mac app's palette (MimirIdentity, MimirTheme, AppKit colors).
+   Light by default; the dark block below follows the system theme, the way
+   the Mac's menu bar panel follows macOS light/dark. */
 :root {
   /* MenuBarPanelView: system colors */
   --window: #ececec;
@@ -37,11 +38,97 @@
   --t-orange: #b86e00;
   --t-red: #c9302c;
   --soft-fill-strong: #e8e8ec;
+  /* Surfaces and lines (were literal #fff / black alphas in main.css) */
+  --surface: #fff;
+  --raised: #fff;
+  --sidebar: #fafafb;
+  --alert: #f0f0f0;
+  --alert-button: #e3e3e3;
+  --backdrop: rgba(0, 0, 0, .18);
+  --switch-off: #e5e5ea;
+  --switch-on: #4a4a4e;
+  --field-border: #c7c7cc;
+  --menu-hover: #0a64d8;
+  --destructive: #c9302c;
+  --line-6: rgba(0, 0, 0, .06);
+  --line-7: rgba(0, 0, 0, .07);
+  --line-8: rgba(0, 0, 0, .08);
+  --line-10: rgba(0, 0, 0, .1);
+  --shade-2: rgba(0, 0, 0, .025);
+  --shade-4: rgba(0, 0, 0, .04);
+  --shade-5: rgba(0, 0, 0, .05);
+  --shade-6: rgba(0, 0, 0, .06);
+  --shade-8: rgba(0, 0, 0, .08);
+  --mark-filter: none;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --serif: "New York", "Iowan Old Style", Georgia, "Cambria", serif;
   --mono: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   color-scheme: light;
 }
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* AppKit dark system colors */
+    --window: #2c2c2e;
+    --window-border: rgba(255, 255, 255, .14);
+    --menu: #2c2c2e;
+    --ink: rgba(255, 255, 255, .88);
+    --ink-80: rgba(255, 255, 255, .7);
+    --ink-10: rgba(255, 255, 255, .12);
+    --secondary: rgba(255, 255, 255, .55);
+    --separator: rgba(255, 255, 255, .1);
+    --soft-fill: rgba(255, 255, 255, .08);
+    --green: #30d158;
+    --orange: #ff9f0a;
+    --blue: #0a84ff;
+    --red: #ff453a;
+    --red-10: rgba(255, 69, 58, .16);
+    --accent: #0a84ff;
+    --link: #4aa3ff;
+    /* Identity, dark */
+    --canvas: #161618;
+    --card: #1f1f22;
+    --glow: #1c2650;
+    --id-ink: #e8ecf6;
+    --id-secondary: #9ba3b6;
+    --brand-blue: #4f78ff;
+    --wordmark: #ececec;
+    /* Settings, dark */
+    --t-ink: #f2f2f4;
+    --t-secondary: #b4b4bb;
+    --t-tertiary: #8e8e93;
+    --t-soft: #2b2b2e;
+    --t-soft-strong: #36363a;
+    --t-hairline: rgba(255, 255, 255, .08);
+    --t-green: #30d158;
+    --t-orange: #ff9f0a;
+    --t-red: #ff6961;
+    --soft-fill-strong: #3a3a3e;
+    --surface: #232326;
+    --raised: #3a3a3e;
+    --sidebar: #1c1c1f;
+    --alert: #2c2c2e;
+    --alert-button: #3a3a3c;
+    --backdrop: rgba(0, 0, 0, .45);
+    --switch-off: #39393d;
+    --switch-on: #8e8e93;
+    --field-border: #48484a;
+    /* white text needs the deeper red: #ff6961 is under 3:1 */
+    --destructive: #ff453a;
+    --line-6: rgba(255, 255, 255, .06);
+    --line-7: rgba(255, 255, 255, .08);
+    --line-8: rgba(255, 255, 255, .1);
+    --line-10: rgba(255, 255, 255, .12);
+    --shade-2: rgba(0, 0, 0, .2);
+    --shade-4: rgba(0, 0, 0, .25);
+    --shade-5: rgba(0, 0, 0, .3);
+    --shade-6: rgba(0, 0, 0, .3);
+    --shade-8: rgba(0, 0, 0, .35);
+    /* mark.svg is drawn in #242424; flip it to near-white */
+    --mark-filter: invert(1) brightness(.92);
+    color-scheme: dark;
+  }
+}
+img.mark { filter: var(--mark-filter); }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {

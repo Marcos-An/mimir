@@ -205,6 +205,7 @@ struct SettingsSections {
                     options: [(.tapToToggle, "Tap"), (.holdToTalk, "Hold")]
                 )
             }
+            AppearanceRow()
             MimirDropdown(
                 title: "Spoken language",
                 selection: Binding(
@@ -469,7 +470,7 @@ private struct SegmentedPicker<Value: Hashable>: View {
                         .background {
                             if isSelected {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(Color.white)
+                                    .fill(MimirTheme.surfaceRaised)
                                     .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
                             }
                         }
@@ -494,7 +495,7 @@ private struct SettingsSwitchStyle: ToggleStyle {
         } label: {
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                 Capsule()
-                    .fill(configuration.isOn ? Color(hex: 0x4A4A4E) : Color(hex: 0xE5E5EA))
+                    .fill(configuration.isOn ? MimirTheme.switchOn : MimirTheme.switchOff)
                     .frame(width: 44, height: 26)
                 Circle()
                     .fill(Color.white)
@@ -921,10 +922,10 @@ private struct KeyBindingRecorderRow: View {
             }
             .padding(.horizontal, 10)
             .frame(width: 230, height: 36)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(MimirTheme.surface))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(conflict == nil ? Color(hex: 0xC7C7CC) : MimirTheme.red, lineWidth: 1.5)
+                    .stroke(conflict == nil ? MimirTheme.fieldBorder : MimirTheme.red, lineWidth: 1.5)
             )
             .contentShape(Rectangle())
         }
@@ -1210,7 +1211,7 @@ struct KeycapRow: View {
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(MimirTheme.softFill))
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                            .stroke(Color.line(0.08), lineWidth: 1)
                     )
                 if index < caps.count - 1 {
                     Text("+")
@@ -1343,34 +1344,44 @@ enum PermissionState {
 /// Settings palette: neutral light grays with near-black ink, chosen for
 /// legibility. The history window uses `MimirIdentity` instead.
 enum MimirTheme {
-    static let surface = Color.white
-    static let surfaceRaised = Color.white
-    static let surfaceSunken = Color(hex: 0xF2F2F4)
+    static let surface = Color.adaptive(0xFFFFFF, 0x232326)
+    static let surfaceRaised = Color.adaptive(0xFFFFFF, 0x3A3A3E)
+    static let surfaceSunken = Color.adaptive(0xF2F2F4, 0x2B2B2E)
+    static let sidebar = Color.adaptive(0xFAFAFB, 0x1C1C1F)
 
     // Typography
-    static let ink = Color(hex: 0x1D1D1F)
-    static let secondaryInk = Color(hex: 0x55555C)
-    static let tertiaryInk = Color(hex: 0x6E6E73)
+    static let ink = Color.adaptive(0x1D1D1F, 0xF2F2F4)
+    static let secondaryInk = Color.adaptive(0x55555C, 0xB4B4BB)
+    static let tertiaryInk = Color.adaptive(0x6E6E73, 0x8E8E93)
 
     // Fills and hairlines
-    static let softFill = Color(hex: 0xF2F2F4)
-    static let softFillStrong = Color(hex: 0xE8E8EC)
-    static let hairline = Color.black.opacity(0.07)
+    static let softFill = Color.adaptive(0xF2F2F4, 0x2B2B2E)
+    static let softFillStrong = Color.adaptive(0xE8E8EC, 0x36363A)
+    static let hairline = Color.line(0.07)
+    static let fieldBorder = Color.adaptive(0xC7C7CC, 0x48484A)
+    static let switchOn = Color.adaptive(0x4A4A4E, 0x8E8E93)
+    static let switchOff = Color.adaptive(0xE5E5EA, 0x39393D)
 
-    // Status, tuned for contrast on white
-    static let green = Color(hex: 0x1F8A4C)
-    static let orange = Color(hex: 0xB86E00)
-    static let red = Color(hex: 0xC9302C)
+    // Status, tuned for contrast on white (light) and on #232326 (dark)
+    static let green = Color.adaptive(0x1F8A4C, 0x30D158)
+    static let orange = Color.adaptive(0xB86E00, 0xFF9F0A)
+    static let red = Color.adaptive(0xC9302C, 0xFF6961)
 }
 
-private extension Color {
-    init(hex: UInt64, alpha: Double = 1) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: alpha
-        )
+/// System / Light / Dark, applied the moment it changes.
+private struct AppearanceRow: View {
+    @AppStorage(MimirAppearance.key) private var raw = MimirAppearance.system.rawValue
+
+    var body: some View {
+        SettingsRow(title: "Appearance") {
+            SegmentedPicker(
+                selection: Binding(
+                    get: { MimirAppearance(rawValue: raw) ?? .system },
+                    set: { raw = $0.rawValue; $0.apply() }
+                ),
+                options: MimirAppearance.allCases.map { ($0, $0.title) }
+            )
+        }
     }
 }
+

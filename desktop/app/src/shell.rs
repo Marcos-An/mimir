@@ -1,40 +1,154 @@
 //! Tray icon, panel placement and the global shortcut.
 
 use crate::controller::{Controller, Phase};
-use crate::store::HotkeyMode;
+use crate::store::{Appearance, HotkeyMode};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Rect};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
-const ICON: &[u8] = include_bytes!("../icons/32x32.png");
+/// The Mac menu bar glyph (Sources/MimirApp/Resources/MenuBarIcon.png):
+/// a black "m" on transparent, 128x80.
+const ICON: &[u8] = include_bytes!("../icons/tray.png");
 
-fn icon(recording: bool) -> Image<'static> {
+/// The glyph tinted to `rgb`. macOS keeps its 128x80 shape (the bar draws it
+/// 18 pt tall, like the Mac app); Windows and Linux need a square icon, so
+/// the glyph is centred on a transparent square there.
+fn icon(rgb: [u8; 3]) -> Image<'static> {
     let base = Image::from_bytes(ICON).expect("tray icon");
-    if !recording {
-        return base.to_owned();
-    }
-    // Red dot in the lower-right corner while recording.
     let (width, height) = (base.width(), base.height());
-    let mut rgba = base.rgba().to_vec();
-    let radius = width as f32 * 0.28;
-    let (cx, cy) = (width as f32 - radius - 0.5, height as f32 - radius - 0.5);
+    let src = base.rgba();
+    let side = if cfg!(target_os = "macos") { height } else { width.max(height) };
+    let (out_w, out_h) = if cfg!(target_os = "macos") { (width, height) } else { (side, side) };
+    let (dx, dy) = ((out_w - width) / 2, (out_h - height) / 2);
+    let mut rgba = vec![0u8; (out_w * out_h * 4) as usize];
     for y in 0..height {
         for x in 0..width {
-            let d = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
-            if d <= radius {
-                let i = ((y * width + x) * 4) as usize;
-                rgba[i..i + 4].copy_from_slice(&[230, 40, 40, 255]);
-            }
+            let s = ((y * width + x) * 4) as usize;
+            let d = (((y + dy) * out_w + x + dx) * 4) as usize;
+            rgba[d..d + 3].copy_from_slice(&rgb);
+            rgba[d + 3] = src[s + 3];
         }
     }
-    Image::new_owned(rgba, width, height)
+    if cfg!(target_os = "linux") {
+        outline(&mut rgba, out_w, out_h);
+    }
+    Image::new_owned(rgba, out_w, out_h)
+}
+
+/// Linux panels can be light or dark and say neither, so the glyph gets a
+/// dark rim that keeps it visible on both.
+fn outline(rgba: &mut [u8], width: u32, height: u32) {
+    const R: i32 = 6;
+    let alpha = |x: i32, y: i32| rgba[((y as u32 * width + x as u32) * 4 + 3) as usize];
+    let mut rim = vec![0u8; (width * height) as usize];
+    for y in 0..height as i32 {
+        for x in 0..width as i32 {
+            if alpha(x, y) == 255 {
+                continue;
+            }
+            let mut best = 0u8;
+            for oy in -R..=R {
+                for ox in -R..=R {
+                    let (nx, ny) = (x + ox, y + oy);
+                    if ox * ox + oy * oy <= R * R && nx >= 0 && ny >= 0 && nx < width as i32 && ny < height as i32 {
+                        best = best.max(alpha(nx, ny));
+                    }
+                }
+            }
+            rim[(y as u32 * width + x as u32) as usize] = best;
+        }
+    }
+    for (i, &a) in rim.iter().enumerate() {
+        let glyph = rgba[i * 4 + 3];
+        if a > glyph {
+            // Glyph colour over a 70% black rim.
+            let rim_alpha = (a as f32 * 0.7) as u8;
+            let g = glyph as f32 / 255.0;
+            for c in 0..3 {
+                rgba[i * 4 + c] = (rgba[i * 4 + c] as f32 * g) as u8;
+            }
+            rgba[i * 4 + 3] = glyph.max(rim_alpha);
+        }
+    }
+}
+
+/// Redraws the tray glyph for the current taskbar colour, e.g. after the
+/// user switched Windows between light and dark.
+pub fn refresh_tray(app: &AppHandle) {
+    let recording = app.try_state::<&'static Controller>().map(|c| c.phase() == Phase::Recording).unwrap_or(false);
+    if let Some(tray) = app.tray_by_id("main") {
+        set_tray_icon(&tray, recording);
+    }
+}
+
+/// Same states as MenuBarController.updateIcon: the glyph follows the bar
+/// (template on macOS), and turns red while recording.
+fn set_tray_icon(tray: &tauri::tray::TrayIcon, recording: bool) {
+    let rgb = if recording { [255, 59, 48] } else if bar_is_light() { [0, 0, 0] } else { [255, 255, 255] };
+    let _ = tray.set_icon(Some(icon(rgb)));
+    let _ = tray.set_icon_as_template(!recording);
+}
+
+/// Whether the taskbar is light, so the glyph is drawn dark on it. Windows
+/// reads its taskbar setting; Linux panels are dark on the common desktops.
+#[cfg(windows)]
+fn bar_is_light() -> bool {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let value = wide("SystemUsesLightTheme");
+    let mut data: u32 = 0;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            &mut data as *mut u32 as *mut _,
+            &mut size,
+        )
+    };
+    status == 0 && data == 1
+}
+
+#[cfg(not(windows))]
+fn bar_is_light() -> bool {
+    // macOS ignores the colour (the icon is a template); Linux: dark panel.
+    false
+}
+
+/// Light/dark for every window: native title bars, and the webviews'
+/// prefers-color-scheme, which mac.css follows.
+pub fn apply_appearance(app: &AppHandle, appearance: Appearance) {
+    app.set_theme(match appearance {
+        // GTK reads None as "light", so Linux asks the desktop itself.
+        Appearance::System if cfg!(target_os = "linux") && linux_prefers_dark() => Some(tauri::Theme::Dark),
+        Appearance::System => None,
+        Appearance::Light => Some(tauri::Theme::Light),
+        Appearance::Dark => Some(tauri::Theme::Dark),
+    });
+}
+
+/// GNOME 42+ and most GTK desktops: `color-scheme`, else a "-dark" GTK theme.
+fn linux_prefers_dark() -> bool {
+    let read = |key: &str| {
+        std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", key])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
+            .unwrap_or_default()
+    };
+    read("color-scheme").contains("dark") || read("gtk-theme").contains("dark")
 }
 
 pub fn phase_changed(app: &AppHandle, phase: Phase) {
     if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_icon(Some(icon(phase == Phase::Recording)));
+        set_tray_icon(&tray, phase == Phase::Recording);
         let _ = tray.set_tooltip(Some(format!("Mimir: {}", phase.title())));
     }
     watch_escape(app, phase == Phase::Recording);
@@ -93,8 +207,9 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     };
     #[cfg(not(target_os = "linux"))]
     let menu = Menu::with_items(app, &[&open, &settings, &quit])?;
-    TrayIconBuilder::with_id("main")
-        .icon(icon(false))
+    let tray = TrayIconBuilder::with_id("main")
+        .icon(icon([0, 0, 0]))
+        .icon_as_template(true)
         .tooltip("Mimir: Ready")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -119,6 +234,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    set_tray_icon(&tray, false);
     Ok(())
 }
 
@@ -142,6 +258,7 @@ pub fn show_panel(app: &AppHandle, near: Option<Rect>) {
     } else {
         let _ = panel.center();
     }
+    refresh_tray(app);
     let _ = panel.show();
     let _ = panel.set_focus();
     if let Some(controller) = app.try_state::<&'static Controller>() {

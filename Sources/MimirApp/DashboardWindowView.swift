@@ -16,15 +16,13 @@ struct DashboardWindowView: View {
             searchQuery: $searchQuery
         )
         .background(MimirIdentity.canvas)
-        .preferredColorScheme(.light)
         .tint(MimirIdentity.brandBlue)
         .toolbar { windowToolbar }
         .toolbarBackground(MimirIdentity.canvas, for: .windowToolbar)
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .sheet(isPresented: $showSettings) {
             SettingsSheetView(store: store, isPresented: $showSettings)
-                .preferredColorScheme(.light)
-        }
+                }
     }
 
     @ToolbarContentBuilder
@@ -153,10 +151,10 @@ private struct TranscriptionSearch: View {
         .foregroundStyle(MimirIdentity.ink)
         .padding(.horizontal, 11)
         .frame(width: 300, height: 32)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(MimirIdentity.paper))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(searchFocused ? MimirIdentity.brandBlue : Color.black.opacity(0.07), lineWidth: 1)
+                .stroke(searchFocused ? MimirIdentity.brandBlue : Color.line(0.07), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
     }
@@ -172,10 +170,10 @@ private struct ShortcutHint: View {
                 .foregroundStyle(MimirIdentity.ink)
                 .padding(.horizontal, 7)
                 .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white))
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(MimirIdentity.paper))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.line(0.1), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 0, y: 1)
             Text("to dictate")
@@ -392,10 +390,10 @@ private struct WelcomeHero: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(MimirIdentity.paper))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                .stroke(Color.line(0.06), lineWidth: 1)
         )
         .padding(.top, 8)
     }
@@ -492,8 +490,7 @@ private struct TranscriptCard: View {
         .popover(isPresented: $showingMetrics, arrowEdge: .bottom) {
             if let metrics = entry.sessionMetrics {
                 MetricsPopoverContent(entry: entry, metrics: metrics, allEntries: allEntries)
-                    .preferredColorScheme(.light)
-            }
+                        }
         }
     }
 
@@ -571,7 +568,7 @@ private struct TranscriptCard: View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         if isFeatured {
             shape
-                .fill(Color.white)
+                .fill(MimirIdentity.paper)
                 .overlay(
                     RadialGradient(
                         colors: [MimirIdentity.glow, MimirIdentity.glow.opacity(0)],
@@ -581,12 +578,12 @@ private struct TranscriptCard: View {
                     )
                     .clipShape(shape)
                 )
-                .overlay(shape.stroke(Color.black.opacity(0.06), lineWidth: 1))
+                .overlay(shape.stroke(Color.line(0.06), lineWidth: 1))
                 .shadow(color: .black.opacity(0.05), radius: 18, y: 8)
         } else {
             shape
-                .fill(hovering ? Color.white : MimirIdentity.card)
-                .overlay(shape.stroke(Color.black.opacity(0.06), lineWidth: 1))
+                .fill(hovering ? MimirIdentity.paper : MimirIdentity.card)
+                .overlay(shape.stroke(Color.line(0.06), lineWidth: 1))
                 .shadow(color: .black.opacity(hovering ? 0.05 : 0.025), radius: hovering ? 10 : 4, y: 2)
         }
     }
@@ -687,7 +684,7 @@ private struct MetricsPopoverContent: View {
             breakdownSection
                 .padding(.bottom, 14)
 
-            Rectangle().fill(Color.black.opacity(0.07)).frame(height: 1)
+            Rectangle().fill(Color.line(0.07)).frame(height: 1)
 
             disclosureButton
                 .padding(.top, 12)
@@ -699,7 +696,7 @@ private struct MetricsPopoverContent: View {
         }
         .padding(20)
         .frame(width: 340)
-        .background(Color.white)
+        .background(MimirTheme.surface)
     }
 
     private var headerBar: some View {
@@ -772,7 +769,7 @@ private struct MetricsPopoverContent: View {
         // "Polish" e não o nome do provider: a métrica é da sessão passada e o
         // provider das settings pode ter mudado desde então.
         if let p = metrics.postProcessingSeconds { items.append(("Polish", p, MimirIdentity.brandBlue.opacity(0.4))) }
-        if let i = metrics.insertionSeconds { items.append(("Paste", i, Color(red: 199 / 255, green: 199 / 255, blue: 204 / 255))) }
+        if let i = metrics.insertionSeconds { items.append(("Paste", i, MimirTheme.fieldBorder)) }
         return items.filter { $0.1 > 0 }
     }
 
@@ -971,11 +968,18 @@ private struct SettingsSheetView: View {
                 }
             }
         }
-        .frame(width: 820, height: 600)
-        .background(Color.white)
+        // 560 tall so the sheet fits the 640-pt default window (it hangs
+        // from under the toolbar); 600 ran past the bottom edge.
+        .frame(width: 820, height: 560)
+        .background(MimirTheme.surface)
         .alert("Restore default settings?", isPresented: $confirmRestore) {
             Button("Cancel", role: .cancel) {}
-            Button("Restore", role: .destructive) { store.reset() }
+            Button("Restore", role: .destructive) {
+                store.reset()
+                // Appearance resets too, like on Windows/Linux.
+                UserDefaults.standard.removeObject(forKey: MimirAppearance.key)
+                MimirAppearance.system.apply()
+            }
         } message: {
             Text("Shortcuts, models, and preferences go back to their defaults. Your history is kept.")
         }
@@ -1000,7 +1004,7 @@ private struct SettingsSheetView: View {
         .padding(.bottom, 16)
         .frame(width: 220)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(red: 250 / 255, green: 250 / 255, blue: 251 / 255))
+        .background(MimirTheme.sidebar)
     }
 
     private func sidebarRow(_ section: SettingsSection) -> some View {
@@ -1015,7 +1019,7 @@ private struct SettingsSheetView: View {
                     .frame(width: 32, height: 32)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(isSelected ? Color.white : Color.clear)
+                            .fill(isSelected ? MimirTheme.surfaceRaised : Color.clear)
                             .shadow(color: .black.opacity(isSelected ? 0.08 : 0), radius: 2, y: 1)
                     )
                 Text(section.title)

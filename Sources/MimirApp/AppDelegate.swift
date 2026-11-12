@@ -24,6 +24,7 @@ final class MimirAppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        MimirAppearance.current.apply()
     }
 
     private static func anotherInstanceIsRunning() -> Bool {

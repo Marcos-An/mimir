@@ -44,6 +44,16 @@ pub enum Engine {
     Groq,
 }
 
+/// Settings > General > Appearance, same three choices as the Mac.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeedResult {
@@ -58,6 +68,7 @@ pub struct Settings {
     /// Never Ctrl+Alt+…: AltGr on Brazilian keyboards sends that.
     pub shortcut: String,
     pub mode: HotkeyMode,
+    pub appearance: Appearance,
     pub engine: Engine,
     pub local_model: String,
     /// "auto", or a language code such as "pt" or "en".
@@ -77,6 +88,7 @@ impl Default for Settings {
         Self {
             shortcut: "Ctrl+Shift+Space".into(),
             mode: HotkeyMode::Tap,
+            appearance: Appearance::System,
             engine: Engine::Local,
             local_model: "small".into(),
             language: "auto".into(),

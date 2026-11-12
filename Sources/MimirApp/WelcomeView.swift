@@ -69,10 +69,10 @@ struct WelcomeView: View {
                     action: requestInputMonitoring
                 )
             }
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(MimirIdentity.paper))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.black.opacity(0.07), lineWidth: 1)
+                    .stroke(Color.line(0.07), lineWidth: 1)
             )
 
             VStack(spacing: 0) {
@@ -82,10 +82,10 @@ struct WelcomeView: View {
                     }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(MimirIdentity.paper))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.black.opacity(0.07), lineWidth: 1)
+                    .stroke(Color.line(0.07), lineWidth: 1)
             )
             .padding(.top, 12)
 
@@ -128,7 +128,6 @@ struct WelcomeView: View {
         .padding(36)
         .frame(width: 560, height: 680)
         .background(MimirIdentity.canvas)
-        .preferredColorScheme(.light)
         .onReceive(refresh) { _ in
             snapshot = PermissionSnapshot.current()
         }
@@ -217,7 +216,7 @@ private struct WelcomePermissionRow: View {
         .padding(.horizontal, 18)
         .frame(minHeight: 64)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1)
+            Rectangle().fill(Color.line(0.06)).frame(height: 1)
         }
     }
 }
@@ -257,7 +256,7 @@ private struct WelcomeModelRow: View {
         .padding(.horizontal, 18)
         .frame(minHeight: 64)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1)
+            Rectangle().fill(Color.line(0.06)).frame(height: 1)
         }
     }
 

@@ -527,6 +527,7 @@ const BUILDERS = {
     return [
       shortcutRow(),
       row("Activation", null, segmented([["tap", "Tap"], ["hold", "Hold"]], s.mode, (v) => save({ mode: v }).then(renderSection))),
+      row("Appearance", null, segmented([["system", "System"], ["light", "Light"], ["dark", "Dark"]], s.appearance, (v) => save({ appearance: v }).then(renderSection))),
       row("Spoken language", null, dropdown(LANGUAGES, s.language, (v) => save({ language: v }).then(renderSection))),
     ];
   },
