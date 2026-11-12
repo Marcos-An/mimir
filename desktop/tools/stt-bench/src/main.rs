@@ -18,6 +18,8 @@ const MODELS: [(&str, &str); 2] = [
     ("large-v3-turbo (q5_0)", "ggml-large-v3-turbo-q5_0.bin"),
 ];
 const MODEL_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
+/// whisper.cpp uses the GPU by default when built with a GPU feature.
+const BACKEND: &str = if cfg!(feature = "gpu") { "GPU (Vulkan)" } else { "CPU" };
 /// Above this, local transcription is "slow": Mimir recommends cloud.
 const SLOW_SECONDS_PER_30S: f64 = 10.0;
 
@@ -44,6 +46,7 @@ fn run() -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     println!("stt-bench {}", env!("CARGO_PKG_VERSION"));
+    println!("Backend: {BACKEND}");
     println!("CPU: {}", cpu_name());
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(8);
     println!("Threads used: {threads}\n");
@@ -72,9 +75,13 @@ fn run() -> Result<(), String> {
             .map(|t| t.split_whitespace().count())
             .sum();
         let verdict = if seconds > SLOW_SECONDS_PER_30S { "SLOW: cloud recommended" } else { "OK for local use" };
-        println!("RESULT | {label} | load {load_seconds:.1} s | 30 s of speech in {seconds:.1} s | {words} words | {verdict}");
+        println!("RESULT | {BACKEND} | {label} | load {load_seconds:.1} s | 30 s of speech in {seconds:.1} s | {words} words | {verdict}");
     }
-    println!("\nPlease send the lines that start with RESULT, and the CPU line.");
+    if cfg!(feature = "gpu") {
+        println!("\nPlease send the lines that start with RESULT, the CPU line, and any line that starts with ggml_vulkan (it names the video card).");
+    } else {
+        println!("\nPlease send the lines that start with RESULT, and the CPU line.");
+    }
     Ok(())
 }
 

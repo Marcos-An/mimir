@@ -8,3 +8,8 @@ description = "Spike S2: how fast local Whisper (whisper.cpp) transcribes on thi
 whisper-rs = "0.14"
 hound = "3"
 ureq = "2"
+
+[features]
+# Builds stt-bench-gpu.exe: whisper.cpp on the video card through Vulkan
+# (NVIDIA, AMD, Intel). Needs the Vulkan SDK at build time.
+gpu = ["whisper-rs/vulkan"]

@@ -63,7 +63,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop
-      - run: cargo build --release -p uia-probe -p stt-bench
+      - name: Build the CPU tools
+        shell: pwsh
+        run: |
+          cargo build --release -p uia-probe -p stt-bench
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item target/release/uia-probe.exe, target/release/stt-bench.exe out/
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        env:
+          VULKAN_VERSION: 1.4.304.1
+        run: |
+          curl.exe -sSfL -o "$env:RUNNER_TEMP\vulkan-sdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/VulkanSDK-$env:VULKAN_VERSION-Installer.exe"
+          & "$env:RUNNER_TEMP\vulkan-sdk.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\bin"
+      - name: Build the GPU bench
+        shell: pwsh
+        run: |
+          cargo build --release -p stt-bench --features gpu
+          Copy-Item target/release/stt-bench.exe out/stt-bench-gpu.exe
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'desktop-probes-latest' }}
@@ -72,8 +91,10 @@ jobs:
           body: |
             Two small test tools for the Windows version of Mimir. Neither one records, stores or uploads anything you type.
             1. **stt-bench.exe** measures how fast speech-to-text runs on your PC. It downloads about 760 MB once. Send the lines that start with RESULT, plus the CPU line.
-            2. **uia-probe.exe** checks what Windows exposes in text fields. Click into a text box in Notepad, Chrome, Slack, Teams/Discord and Word/Outlook, and type a few words in each. Send the table it prints.
+            2. **stt-bench-gpu.exe** runs the same test on the video card (NVIDIA, AMD or Intel). Run it after stt-bench.exe; it reuses the same downloads. If it does not open, skip it. Send the RESULT lines and any line that starts with ggml_vulkan.
+            3. **uia-probe.exe** checks what Windows exposes in text fields. Click into a text box in Notepad, Chrome, Slack, Teams/Discord and Word/Outlook, and type a few words in each. Send the table it prints.
             When Windows SmartScreen warns, click "More info", then "Run anyway". The tools are not signed.
           files: |
-            desktop/target/release/uia-probe.exe
-            desktop/target/release/stt-bench.exe
+            desktop/out/uia-probe.exe
+            desktop/out/stt-bench.exe
+            desktop/out/stt-bench-gpu.exe

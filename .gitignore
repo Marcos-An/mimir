@@ -33,3 +33,4 @@ DerivedData/
 # Local design-tool workspace
 /.impeccable/
 /desktop/target
+/desktop/out
