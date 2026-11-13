@@ -1,6 +1,9 @@
 import AppKit
 import ApplicationServices
 import MimirCore
+import os
+
+private let applyLog = Logger(subsystem: "dev.mimir.app", category: "WritingCheck")
 
 /// The focused text field of an allowed app, read through Accessibility.
 /// Adapted from Trecho's AccessibilityReader.
@@ -249,27 +252,46 @@ enum FocusedTextReader {
     /// write first and falls back to typing (Electron ignores some writes).
     static func replace(range: NSRange, with replacement: String, in field: FocusedField, source: String, expected: String) -> Bool {
         let element = field.element
-        guard isSettable(element, kAXSelectedTextRangeAttribute) else { return false }
+        guard isSettable(element, kAXSelectedTextRangeAttribute) else {
+            applyLog.notice("Apply: selection range not settable")
+            return false
+        }
         let previousSelection = copyRange(element, kAXSelectedTextRangeAttribute)
 
-        func guardedWrite(_ write: () -> Bool) -> Bool {
-            guard isStillFocused(field), currentText(of: field) == source,
-                  setSelectedRange(element, range),
-                  isStillFocused(field), currentText(of: field) == source,
-                  copyRange(element, kAXSelectedTextRangeAttribute) == range
-            else { return false }
-            return write()
+        func guardedWrite(_ label: String, _ write: () -> Bool) -> Bool {
+            guard isStillFocused(field) else { applyLog.notice("Apply \(label, privacy: .public): field lost focus"); return false }
+            guard currentText(of: field) == source else { applyLog.notice("Apply \(label, privacy: .public): text changed before select"); return false }
+            guard setSelectedRange(element, range) else { applyLog.notice("Apply \(label, privacy: .public): select range refused"); return false }
+            guard isStillFocused(field) else { applyLog.notice("Apply \(label, privacy: .public): focus lost after select"); return false }
+            guard currentText(of: field) == source else { applyLog.notice("Apply \(label, privacy: .public): text changed after select"); return false }
+            // Slack (Electron) applies the selection asynchronously: reading
+            // it back at once still returns the old caret. Wait for it.
+            var selected = copyRange(element, kAXSelectedTextRangeAttribute)
+            for _ in 0..<15 where selected != range {
+                Thread.sleep(forTimeInterval: 0.02)
+                selected = copyRange(element, kAXSelectedTextRangeAttribute)
+            }
+            guard selected == range else {
+                applyLog.notice("Apply \(label, privacy: .public): selection is \(String(describing: selected), privacy: .public), wanted \(String(describing: range), privacy: .public)")
+                return false
+            }
+            guard write() else { applyLog.notice("Apply \(label, privacy: .public): write refused"); return false }
+            return true
         }
 
-        if isSettable(element, kAXSelectedTextAttribute),
-           guardedWrite({ AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef) == .success }),
-           currentText(of: field) == expected {
-            return true
+        if isSettable(element, kAXSelectedTextAttribute) {
+            if guardedWrite("ax", { AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef) == .success }) {
+                if currentText(of: field) == expected { return true }
+                applyLog.notice("Apply ax: text after write is not the expected text")
+            }
+        } else {
+            applyLog.notice("Apply: selected text not settable")
         }
         // Only type when the original text is still intact.
         guard currentText(of: field) == source,
-              guardedWrite({ typeText(replacement, to: field.pid) })
+              guardedWrite("type", { typeText(replacement, to: field.pid) })
         else {
+            applyLog.notice("Apply: typing skipped (text no longer the source, or guard failed)")
             restoreSelection(previousSelection, field: field, source: source, target: range)
             return false
         }
