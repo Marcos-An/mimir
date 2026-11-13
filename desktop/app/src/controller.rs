@@ -34,6 +34,46 @@ impl Phase {
     }
 }
 
+/// The tray glyph's state; the error one stays until the next dictation, as
+/// on the Mac.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrayState {
+    Idle,
+    Recording,
+    Busy,
+    Error,
+    Downloading,
+}
+
+impl TrayState {
+    /// The Mac's MenuBarController.updateIcon shows a download before
+    /// anything else; here dictation comes first, so a download never hides
+    /// the microphone. A download still wins over an old error.
+    fn of(phase: Phase, downloading: bool, error: bool) -> Self {
+        match phase {
+            Phase::Recording => TrayState::Recording,
+            Phase::Transcribing | Phase::Polishing | Phase::Pasting => TrayState::Busy,
+            Phase::Idle if downloading => TrayState::Downloading,
+            Phase::Idle if error => TrayState::Error,
+            Phase::Idle => TrayState::Idle,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_state_order() {
+        assert_eq!(TrayState::of(Phase::Recording, true, true), TrayState::Recording);
+        assert_eq!(TrayState::of(Phase::Polishing, true, false), TrayState::Busy);
+        assert_eq!(TrayState::of(Phase::Idle, true, true), TrayState::Downloading);
+        assert_eq!(TrayState::of(Phase::Idle, false, true), TrayState::Error);
+        assert_eq!(TrayState::of(Phase::Idle, false, false), TrayState::Idle);
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -111,7 +151,13 @@ impl Controller {
     pub fn set_download(&self, app: &AppHandle, download: Option<Download>) {
         self.inner.lock().unwrap().download = download.clone();
         let _ = app.emit("download", &download);
+        crate::shell::refresh_tray(app);
         self.publish(app);
+    }
+
+    pub fn tray_state(&self) -> TrayState {
+        let inner = self.inner.lock().unwrap();
+        TrayState::of(inner.phase, inner.download.is_some(), inner.error.is_some())
     }
 
     pub fn phase(&self) -> Phase {

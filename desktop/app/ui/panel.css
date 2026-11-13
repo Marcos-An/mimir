@@ -44,6 +44,8 @@ body { background: transparent; }
 .status-text { font-size: 13px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand { font-size: 11px; font-weight: 600; color: var(--secondary); letter-spacing: .6px; }
 .header-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.keycaps { display: inline-flex; align-items: center; gap: 3px; }
+.keycaps .plus { font-size: 11px; color: var(--secondary); }
 .keycap {
   font: 600 12px var(--mono);
   padding: 2px 7px;

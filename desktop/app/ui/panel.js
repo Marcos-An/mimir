@@ -42,7 +42,17 @@ function render(state) {
   const hold = state.mode === "hold";
   $("verb").textContent = hold ? "Hold" : "Tap";
   $("trail").textContent = hold ? "and speak." : "to start/stop.";
-  $("shortcut").textContent = state.shortcut;
+  // One cap per key, "+" between, like the shortcut in Settings.
+  $("shortcut").replaceChildren(...state.shortcut.split("+").flatMap((key, i) => {
+    const cap = document.createElement("span");
+    cap.className = "keycap";
+    cap.textContent = key;
+    if (i === 0) return [cap];
+    const plus = document.createElement("span");
+    plus.className = "plus";
+    plus.textContent = "+";
+    return [plus, cap];
+  }));
 
   const credits = state.outOfCredits;
   $("credits").classList.toggle("hidden", !credits);
